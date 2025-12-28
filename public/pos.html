@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema POS - FEL</title>
+    <link rel="stylesheet" href="/css/pos.css">
+</head>
+<body>
+    <!-- Login Screen -->
+    <div id="login-screen" class="screen active">
+        <div class="login-container">
+            <div class="login-card">
+                <h1>Sistema POS - FEL</h1>
+                <p class="subtitle">Facturación Electrónica en Línea</p>
+                <form id="login-form">
+                    <div class="form-group">
+                        <label for="email">Correo Electrónico</label>
+                        <input type="email" id="email" name="email" required value="admin@pos.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="password">Contraseña</label>
+                        <input type="password" id="password" name="password" required value="password">
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block">Iniciar Sesión</button>
+                    <div id="login-error" class="error-message"></div>
+                </form>
+                <div class="quick-access">
+                    <p class="text-muted">Acceso rápido:</p>
+                    <button class="btn-link" onclick="quickLogin('admin@pos.com')">Admin</button>
+                    <button class="btn-link" onclick="quickLogin('manager@pos.com')">Manager</button>
+                    <button class="btn-link" onclick="quickLogin('cashier@pos.com')">Cajero</button>
+                    <button class="btn-link" onclick="quickLogin('warehouse@pos.com')">Almacén</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Application -->
+    <div id="app-screen" class="screen">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-content">
+                <h1>POS - FEL</h1>
+                <div class="user-info">
+                    <span class="user-name" id="user-name"></span>
+                    <span class="user-role" id="user-role"></span>
+                    <button class="btn btn-sm btn-outline" onclick="logout()">Cerrar Sesión</button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Navigation -->
+        <nav class="app-nav">
+            <button class="nav-item active" data-module="dashboard">
+                <span class="icon">📊</span>
+                <span>Dashboard</span>
+            </button>
+            <button class="nav-item" data-module="cash-box">
+                <span class="icon">💰</span>
+                <span>Caja</span>
+            </button>
+            <button class="nav-item" data-module="sales">
+                <span class="icon">🛒</span>
+                <span>Ventas</span>
+            </button>
+            <button class="nav-item" data-module="stock">
+                <span class="icon">📦</span>
+                <span>Inventario</span>
+            </button>
+            <button class="nav-item" data-module="fiscal">
+                <span class="icon">📄</span>
+                <span>Documentos</span>
+            </button>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="app-content">
+            <!-- Dashboard Module -->
+            <div id="dashboard-module" class="module active">
+                <h2>Dashboard</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h3>Estado de Caja</h3>
+                        <p class="stat-value" id="cash-status">---</p>
+                        <p class="stat-label">Estado actual</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Ventas Pendientes</h3>
+                        <p class="stat-value" id="pending-sales">0</p>
+                        <p class="stat-label">Sin confirmar</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Total en Caja</h3>
+                        <p class="stat-value" id="cash-total">Q 0.00</p>
+                        <p class="stat-label">Efectivo disponible</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Documentos Fiscales</h3>
+                        <p class="stat-value" id="fiscal-count">0</p>
+                        <p class="stat-label">Generados hoy</p>
+                    </div>
+                </div>
+                <div class="alert info">
+                    <strong>Bienvenido al Sistema POS - FEL</strong><br>
+                    Selecciona un módulo del menú para comenzar a trabajar.
+                </div>
+            </div>
+
+            <!-- Cash Box Module -->
+            <div id="cash-box-module" class="module">
+                <div class="module-header">
+                    <h2>Gestión de Caja</h2>
+                    <div class="actions">
+                        <button class="btn btn-success" onclick="openCashBox()">Abrir Caja</button>
+                        <button class="btn btn-danger" onclick="closeCashBox()">Cerrar Caja</button>
+                        <button class="btn btn-secondary" onclick="loadCashBoxSummary()">Actualizar</button>
+                    </div>
+                </div>
+
+                <div id="cash-box-content">
+                    <div class="alert warning">
+                        Cargando información de caja...
+                    </div>
+                </div>
+
+                <div class="card" style="margin-top: 20px;">
+                    <h3>Registrar Movimiento</h3>
+                    <form id="cash-movement-form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Tipo de Movimiento</label>
+                                <select name="type" required>
+                                    <option value="income">Ingreso</option>
+                                    <option value="expense">Egreso</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Monto (Q)</label>
+                                <input type="number" name="amount" step="0.01" min="0.01" required>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Descripción</label>
+                            <input type="text" name="description" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Registrar Movimiento</button>
+                    </form>
+                </div>
+
+                <div class="card" style="margin-top: 20px;">
+                    <h3>Movimientos de Caja</h3>
+                    <div id="cash-movements-list">
+                        <p class="text-muted">No hay movimientos registrados</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sales Module -->
+            <div id="sales-module" class="module">
+                <div class="module-header">
+                    <h2>Ventas</h2>
+                    <div class="actions">
+                        <button class="btn btn-primary" onclick="showNewSaleForm()">Nueva Venta</button>
+                        <button class="btn btn-secondary" onclick="loadPendingSales()">Ver Pendientes</button>
+                    </div>
+                </div>
+
+                <!-- New Sale Form -->
+                <div id="new-sale-section" class="card" style="display: none;">
+                    <h3>Nueva Venta</h3>
+                    <form id="new-sale-form">
+                        <div class="form-row">
+                            <div class="form-group flex-2">
+                                <label>Cliente</label>
+                                <input type="text" name="customer_name" required placeholder="Nombre del cliente">
+                            </div>
+                            <div class="form-group">
+                                <label>NIT</label>
+                                <input type="text" name="customer_nit" placeholder="CF o NIT">
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Crear Venta</button>
+                    </form>
+                </div>
+
+                <!-- Current Sale -->
+                <div id="current-sale-section" style="display: none;">
+                    <div class="card">
+                        <div class="sale-header">
+                            <h3>Venta #<span id="current-sale-id"></span></h3>
+                            <div class="sale-actions">
+                                <button class="btn btn-success" onclick="confirmCurrentSale()">Confirmar Venta</button>
+                                <button class="btn btn-danger" onclick="cancelCurrentSale()">Cancelar</button>
+                            </div>
+                        </div>
+                        
+                        <div class="sale-info">
+                            <p><strong>Cliente:</strong> <span id="sale-customer"></span></p>
+                            <p><strong>Estado:</strong> <span id="sale-status" class="badge"></span></p>
+                        </div>
+
+                        <h4>Agregar Producto</h4>
+                        <div style="position: relative;">
+                            <div class="form-group">
+                                <label>Buscar por Código de Barras o Nombre</label>
+                                <input type="text" id="product-search" placeholder="Escanea código o escribe nombre del producto..." autocomplete="off">
+                            </div>
+                            <div id="search-results" class="search-dropdown" style="display: none;"></div>
+                        </div>
+
+                        <div id="product-result" style="display: none; margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                            <h5 id="product-name"></h5>
+                            <p id="product-description" style="color: #666;"></p>
+                            
+                            <form id="add-item-form">
+                                <input type="hidden" id="selected-product-id" name="product_id">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Presentación</label>
+                                        <select id="presentation-select" name="presentation_id" required>
+                                            <option value="">Seleccione presentación</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Cantidad</label>
+                                        <input type="number" name="quantity" required min="1" step="1" value="1">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Precio Unitario</label>
+                                        <input type="text" id="unit-price-display" readonly style="background: #e9ecef;">
+                                    </div>
+                                </div>
+                                <button type="submit" class="btn btn-primary">Agregar a la Venta</button>
+                            </form>
+                        </div>
+
+                        <h4>Productos en Venta</h4>
+                        <div id="sale-items-list">
+                            <p class="text-muted">No hay productos agregados</p>
+                        </div>
+
+                        <div class="sale-totals">
+                            <p><strong>Subtotal:</strong> Q <span id="sale-subtotal">0.00</span></p>
+                            <p><strong>IVA (12%):</strong> Q <span id="sale-tax">0.00</span></p>
+                            <p class="total"><strong>Total:</strong> Q <span id="sale-total">0.00</span></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pending Sales List -->
+                <div id="pending-sales-section" style="display: none;">
+                    <div class="card">
+                        <h3>Ventas Pendientes</h3>
+                        <div id="pending-sales-list">
+                            <p class="text-muted">No hay ventas pendientes</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stock Module -->
+            <div id="stock-module" class="module">
+                <div class="module-header">
+                    <h2>Gestión de Inventario</h2>
+                    <div class="actions">
+                        <button class="btn btn-primary" onclick="showAddStockForm()">Agregar Stock</button>
+                        <button class="btn btn-secondary" onclick="showCheckStockForm()">Consultar Stock</button>
+                    </div>
+                </div>
+
+                <!-- Add Stock Form -->
+                <div id="add-stock-section" class="card" style="display: none;">
+                    <h3>Agregar Stock</h3>
+                    <form id="add-stock-form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>ID Producto</label>
+                                <input type="number" name="product_id" required min="1">
+                            </div>
+                            <div class="form-group">
+                                <label>Cantidad</label>
+                                <input type="number" name="quantity" required min="1" step="1">
+                            </div>
+                            <div class="form-group">
+                                <label>Costo Unitario (Q)</label>
+                                <input type="number" name="unit_cost" required min="0.01" step="0.01">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Fecha de Vencimiento</label>
+                                <input type="date" name="expiration_date">
+                            </div>
+                            <div class="form-group">
+                                <label>Ubicación</label>
+                                <input type="text" name="location" placeholder="Ej: Bodega A, Anaquel 5">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Número de Lote</label>
+                            <input type="text" name="batch_number" placeholder="Opcional">
+                        </div>
+                        <button type="submit" class="btn btn-primary">Agregar al Inventario</button>
+                    </form>
+                </div>
+
+                <!-- Check Stock Form -->
+                <div id="check-stock-section" class="card" style="display: none;">
+                    <h3>Consultar Disponibilidad</h3>
+                    <form id="check-stock-form" class="inline-form">
+                        <div class="form-group">
+                            <label>ID Producto</label>
+                            <input type="number" name="product_id" required min="1">
+                        </div>
+                        <button type="submit" class="btn btn-primary">Consultar</button>
+                    </form>
+                    <div id="stock-result" style="margin-top: 20px;"></div>
+                </div>
+
+                <!-- Stock Batches List -->
+                <div class="card" style="margin-top: 20px;">
+                    <h3>Lotes de Inventario</h3>
+                    <form id="view-batches-form" class="inline-form">
+                        <div class="form-group">
+                            <label>ID Producto</label>
+                            <input type="number" name="product_id" required min="1">
+                        </div>
+                        <button type="submit" class="btn btn-secondary">Ver Lotes</button>
+                    </form>
+                    <div id="stock-batches-list" style="margin-top: 20px;">
+                        <p class="text-muted">Ingresa un ID de producto para ver sus lotes</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Fiscal Documents Module -->
+            <div id="fiscal-module" class="module">
+                <div class="module-header">
+                    <h2>Documentos Fiscales</h2>
+                    <div class="actions">
+                        <button class="btn btn-secondary" onclick="loadRecentFiscalDocuments()">Actualizar</button>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Anular Venta</h3>
+                    <form id="annul-sale-form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>ID de Venta</label>
+                                <input type="number" name="sale_id" required min="1">
+                            </div>
+                            <div class="form-group flex-2">
+                                <label>Razón de Anulación</label>
+                                <input type="text" name="reason" required placeholder="Motivo de la anulación">
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-danger">Anular Venta</button>
+                    </form>
+                </div>
+
+                <div class="card" style="margin-top: 20px;">
+                    <h3>Documentos Recientes</h3>
+                    <div id="fiscal-documents-list">
+                        <p class="text-muted">No hay documentos fiscales registrados</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay">
+        <div class="spinner"></div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container"></div>
+
+    <script src="/js/pos.js"></script>
+</body>
+</html>
