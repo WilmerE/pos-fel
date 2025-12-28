@@ -199,8 +199,20 @@ async function loadDashboard() {
     try {
         // Load cash box status
         const cashBox = await apiRequest('/cash-box/summary');
-        document.getElementById('cash-status').textContent = cashBox.data.status === 'open' ? 'Abierta' : 'Cerrada';
-        document.getElementById('cash-total').textContent = `Q ${parseFloat(cashBox.data.current_cash || 0).toFixed(2)}`;
+        const cashBoxData = cashBox.data;
+        
+        document.getElementById('cash-status').textContent = cashBoxData.status === 'open' ? 'Abierta' : 'Cerrada';
+        
+        // Calculate current cash correctly
+        if (cashBoxData.status === 'open') {
+            const openingAmount = parseFloat(cashBoxData.opening_amount || 0);
+            const totalIncome = parseFloat(cashBoxData.totals?.income || 0);
+            const totalExpenses = parseFloat(cashBoxData.totals?.expenses || 0);
+            const currentCash = openingAmount + totalIncome - totalExpenses;
+            document.getElementById('cash-total').textContent = `Q ${currentCash.toFixed(2)}`;
+        } else {
+            document.getElementById('cash-total').textContent = 'Q 0.00';
+        }
 
         // Load pending sales (would need endpoint)
         document.getElementById('pending-sales').textContent = '0';
