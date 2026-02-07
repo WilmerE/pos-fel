@@ -188,7 +188,6 @@
                     <h2>Ventas</h2>
                     <div class="actions" id="sales-header-actions">
                         <button class="btn btn-primary" onclick="showNewSaleForm()">Nueva Venta</button>
-                        <button class="btn btn-secondary" onclick="loadPendingSales()">Ver Pendientes</button>
                     </div>
                 </div>
 
@@ -206,7 +205,10 @@
                                 <input type="text" name="customer_nit" placeholder="CF o NIT">
                             </div>
                         </div>
-                        <button type="submit" class="btn btn-primary">Crear Venta</button>
+                        <div style="overflow: hidden; padding-top: 20px;">
+                            <button type="button" class="btn btn-secondary" onclick="cancelNewSale()" style="float: left;">Cancelar</button>
+                            <button type="submit" class="btn btn-primary" style="float: right;">Crear Venta</button>
+                        </div>
                     </form>
                 </div>
 
@@ -216,6 +218,7 @@
                         <div class="sale-header">
                             <h3>Venta #<span id="current-sale-id"></span></h3>
                             <div class="sale-actions">
+                                <button class="btn btn-secondary" onclick="backToPendingSales()">Volver</button>
                                 <button class="btn btn-success" onclick="confirmCurrentSale()">Confirmar Venta</button>
                                 <button class="btn btn-danger" onclick="cancelCurrentSale()">Cancelar</button>
                             </div>

@@ -137,6 +137,16 @@ class CashBoxController extends Controller
                 ], 400);
             }
 
+            // Check for pending sales
+            $pendingSalesCount = \App\Models\Sale::where('status', 'pending')->count();
+            
+            if ($pendingSalesCount > 0) {
+                return response()->json([
+                    'message' => "No se puede cerrar la caja. Hay {$pendingSalesCount} venta(s) pendiente(s). Por favor, finalice o cancele todas las ventas pendientes antes de cerrar caja.",
+                    'pending_sales' => $pendingSalesCount,
+                ], 400);
+            }
+
             $cashBox = $this->cashBoxService->closeCashBox(
                 cashBoxId: $openCashBox->id,
                 userId: $request->user()->id,

@@ -185,6 +185,7 @@ async function loadModuleData(moduleName) {
             loadCashBoxSummary();
             break;
         case 'sales':
+            initSalesModule();
             break;
         case 'stock':
             break;
@@ -481,31 +482,62 @@ async function loadCashMovements() {
 }
 
 // Sales Module
+async function initSalesModule() {
+    // Hide all sections first
+    document.getElementById('new-sale-section').style.display = 'none';
+    document.getElementById('current-sale-section').style.display = 'none';
+    document.getElementById('pending-sales-section').style.display = 'none';
+    
+    // Show buttons initially
+    document.getElementById('sales-header-actions').style.display = 'flex';
+    
+    try {
+        // Check if there are pending sales
+        const response = await apiRequest('/sales/pending');
+        const sales = response.data;
+        
+        if (sales.length > 0) {
+            // Automatically load pending sales if any exist
+            showPendingSales(sales);
+        }
+    } catch (error) {
+        console.error('Error checking pending sales:', error);
+    }
+}
+
 function showNewSaleForm() {
     document.getElementById('new-sale-section').style.display = 'block';
     document.getElementById('current-sale-section').style.display = 'none';
     document.getElementById('pending-sales-section').style.display = 'none';
-    // Show header actions
-    document.getElementById('sales-header-actions').style.display = 'flex';
+    // Hide header actions when showing form
+    document.getElementById('sales-header-actions').style.display = 'none';
 }
 
 async function loadPendingSales() {
-    document.getElementById('new-sale-section').style.display = 'none';
-    document.getElementById('current-sale-section').style.display = 'none';
-    document.getElementById('pending-sales-section').style.display = 'block';
-
     try {
         const response = await apiRequest('/sales/pending');
         const sales = response.data;
+        showPendingSales(sales);
+    } catch (error) {
+        console.error('Error loading pending sales:', error);
+    }
+}
 
-        const container = document.getElementById('pending-sales-list');
-        
-        if (sales.length === 0) {
-            container.innerHTML = '<p class="text-muted">No hay ventas pendientes</p>';
-            return;
-        }
+function showPendingSales(sales) {
+    document.getElementById('new-sale-section').style.display = 'none';
+    document.getElementById('current-sale-section').style.display = 'none';
+    document.getElementById('pending-sales-section').style.display = 'block';
+    // Keep header actions visible when viewing pending sales
+    document.getElementById('sales-header-actions').style.display = 'flex';
 
-        container.innerHTML = `
+    const container = document.getElementById('pending-sales-list');
+    
+    if (sales.length === 0) {
+        container.innerHTML = '<p class="text-muted">No hay ventas pendientes</p>';
+        return;
+    }
+
+    container.innerHTML = `
             <table class="table">
                 <thead>
                     <tr>
@@ -531,9 +563,6 @@ async function loadPendingSales() {
                 </tbody>
             </table>
         `;
-    } catch (error) {
-        console.error('Error loading pending sales:', error);
-    }
 }
 
 async function loadSale(saleId) {
@@ -550,7 +579,7 @@ function showCurrentSale() {
     document.getElementById('new-sale-section').style.display = 'none';
     document.getElementById('current-sale-section').style.display = 'block';
     document.getElementById('pending-sales-section').style.display = 'none';
-    // Hide header actions
+    // Hide header actions when working on a sale
     document.getElementById('sales-header-actions').style.display = 'none';
 
     const sale = state.currentSale;
@@ -563,6 +592,21 @@ function showCurrentSale() {
 
     updateSaleItems();
     updateSaleTotals();
+}
+
+function cancelNewSale() {
+    // Reset form
+    document.getElementById('new-sale-form').reset();
+    // Hide form and show buttons
+    document.getElementById('new-sale-section').style.display = 'none';
+    document.getElementById('sales-header-actions').style.display = 'flex';
+    // Check if there are pending sales to show
+    initSalesModule();
+}
+
+function backToPendingSales() {
+    // Simply go back to pending sales view without affecting the sale
+    initSalesModule();
 }
 
 function updateSaleItems() {
@@ -620,10 +664,10 @@ async function confirmCurrentSale() {
         });
         showToast('✅ Venta confirmada correctamente', 'success');
         
-        // Clear current sale and show new sale form after short delay
+        // Clear current sale and reinitialize module
         setTimeout(() => {
             state.currentSale = null;
-            showNewSaleForm();
+            initSalesModule();
         }, 1500);
     } catch (error) {
         // Error shown
@@ -639,7 +683,7 @@ async function cancelCurrentSale() {
         });
         showToast('Venta cancelada', 'info');
         state.currentSale = null;
-        showNewSaleForm();
+        initSalesModule();
     } catch (error) {
         // Error shown
     }
