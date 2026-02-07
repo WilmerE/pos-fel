@@ -32,10 +32,18 @@ class StockController extends Controller
 
         $validator = Validator::make($request->all(), [
             'product_id' => 'required|exists:products,id',
-            'batch_number' => 'required|string|max:50',
+            'batch_number' => 'nullable|string|max:50',
             'expiration_date' => 'nullable|date',
             'quantity' => 'required|integer|min:1',
+            'unit_cost' => 'required|numeric|min:0.01',
             'location' => 'nullable|string|max:100',
+        ], [
+            'product_id.required' => 'El producto es obligatorio.',
+            'product_id.exists' => 'El producto no existe.',
+            'quantity.required' => 'La cantidad es obligatoria.',
+            'quantity.min' => 'La cantidad debe ser al menos 1.',
+            'unit_cost.required' => 'El costo unitario es obligatorio.',
+            'unit_cost.min' => 'El costo debe ser mayor a 0.',
         ]);
 
         if ($validator->fails()) {
@@ -48,7 +56,7 @@ class StockController extends Controller
         try {
             $stockBatch = $this->stockService->addStock(
                 productId: $request->product_id,
-                batchNumber: $request->batch_number,
+                batchNumber: $request->batch_number ?? 'LOTE-' . time(),
                 expirationDate: $request->expiration_date,
                 quantity: $request->quantity,
                 userId: $request->user()->id,
@@ -175,7 +183,7 @@ class StockController extends Controller
      * Check if product has sufficient stock
      * Permission: view_stock
      */
-    public function checkStock(Request $request): JsonResponse
+    public function checkStock(Request $request, int $productId): JsonResponse
     {
         if (!$request->user()->hasPermission('view_stock')) {
             return response()->json([
@@ -183,33 +191,14 @@ class StockController extends Controller
             ], 403);
         }
 
-        $validator = Validator::make($request->all(), [
-            'product_id' => 'required|exists:products,id',
-            'quantity' => 'required|integer|min:1',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'message' => 'Datos inválidos.',
-                'errors' => $validator->errors(),
-            ], 422);
-        }
-
         try {
-            $hasSufficient = $this->stockService->hasSufficientStock(
-                $request->product_id,
-                $request->quantity
-            );
-
-            $availableStock = $this->stockService->getAvailableStock($request->product_id);
+            $availableStock = $this->stockService->getAvailableStock($productId);
 
             return response()->json([
                 'message' => 'Consulta de stock realizada exitosamente.',
                 'data' => [
-                    'product_id' => $request->product_id,
-                    'requested_quantity' => $request->quantity,
-                    'available_stock' => $availableStock,
-                    'has_sufficient_stock' => $hasSufficient,
+                    'product_id' => $productId,
+                    'available_quantity' => $availableStock,
                 ],
             ]);
         } catch (Exception $e) {

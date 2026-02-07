@@ -188,6 +188,9 @@ async function loadModuleData(moduleName) {
             break;
         case 'stock':
             break;
+        case 'products':
+            loadProductCatalog();
+            break;
         case 'fiscal':
             loadRecentFiscalDocuments();
             break;
@@ -197,29 +200,137 @@ async function loadModuleData(moduleName) {
 // Dashboard Module
 async function loadDashboard() {
     try {
-        // Load cash box status
-        const cashBox = await apiRequest('/cash-box/summary');
-        const cashBoxData = cashBox.data;
+        // Load dashboard statistics
+        const response = await apiRequest('/dashboard/stats');
+        const data = response.data;
         
-        document.getElementById('cash-status').textContent = cashBoxData.status === 'open' ? 'Abierta' : 'Cerrada';
-        
-        // Calculate current cash correctly
-        if (cashBoxData.status === 'open') {
-            const openingAmount = parseFloat(cashBoxData.opening_amount || 0);
-            const totalIncome = parseFloat(cashBoxData.totals?.income || 0);
-            const totalExpenses = parseFloat(cashBoxData.totals?.expenses || 0);
-            const currentCash = openingAmount + totalIncome - totalExpenses;
-            document.getElementById('cash-total').textContent = `Q ${currentCash.toFixed(2)}`;
-        } else {
-            document.getElementById('cash-total').textContent = 'Q 0.00';
-        }
+        // Update stat cards
+        document.getElementById('cash-status').textContent = data.current_cash_box.is_open ? 'Abierta' : 'Cerrada';
+        document.getElementById('sales-today').textContent = data.today.sales_count;
+        document.getElementById('sales-today-total').textContent = `Q ${formatNumber(data.today.sales_total)}`;
+        document.getElementById('sales-month').textContent = data.month.sales_count;
+        document.getElementById('sales-month-total').textContent = `Q ${formatNumber(data.month.sales_total)}`;
+        document.getElementById('low-stock-count').textContent = data.low_stock_count;
 
-        // Load pending sales (would need endpoint)
-        document.getElementById('pending-sales').textContent = '0';
-        document.getElementById('fiscal-count').textContent = '0';
+        // Render top products
+        renderTopProducts(data.top_products);
+        
+        // Render sales by day
+        renderSalesByDay(data.sales_by_day);
+        
+        // Render cash box history
+        renderCashBoxHistory(data.cash_box_history);
     } catch (error) {
         console.error('Error loading dashboard:', error);
+        showAlert('Error al cargar el dashboard', 'error');
     }
+}
+
+// Render top products
+function renderTopProducts(products) {
+    const container = document.getElementById('top-products-list');
+    
+    if (!products || products.length === 0) {
+        container.innerHTML = '<p class="text-muted">No hay datos disponibles</p>';
+        return;
+    }
+    
+    const html = `
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Producto</th>
+                    <th style="text-align: right;">Unidades Vendidas</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${products.map(product => `
+                    <tr>
+                        <td>${product.name}</td>
+                        <td style="text-align: right;">${product.total_sold}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+    
+    container.innerHTML = html;
+}
+
+// Render sales by day
+function renderSalesByDay(sales) {
+    const container = document.getElementById('sales-by-day-list');
+    
+    if (!sales || sales.length === 0) {
+        container.innerHTML = '<p class="text-muted">No hay datos disponibles</p>';
+        return;
+    }
+    
+    const html = `
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Fecha</th>
+                    <th style="text-align: right;">Ventas</th>
+                    <th style="text-align: right;">Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${sales.map(day => `
+                    <tr>
+                        <td>${formatDate(day.date)}</td>
+                        <td style="text-align: right;">${day.count}</td>
+                        <td style="text-align: right;">Q ${formatNumber(day.total)}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+    
+    container.innerHTML = html;
+}
+
+// Render cash box history
+function renderCashBoxHistory(history) {
+    const container = document.getElementById('cash-box-history-table');
+    
+    if (!history || history.length === 0) {
+        container.innerHTML = '<p class="text-muted">No hay historial disponible</p>';
+        return;
+    }
+    
+    const html = `
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Fecha Apertura</th>
+                    <th>Fecha Cierre</th>
+                    <th style="text-align: right;">Monto Inicial</th>
+                    <th style="text-align: right;">Ventas</th>
+                    <th style="text-align: right;">Monto Final</th>
+                    <th style="text-align: right;">Diferencia</th>
+                    <th>Abierta por</th>
+                    <th>Cerrada por</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${history.map(box => `
+                    <tr>
+                        <td>${formatDateTime(box.opened_at)}</td>
+                        <td>${formatDateTime(box.closed_at)}</td>
+                        <td style="text-align: right;">Q ${formatNumber(box.opening_amount)}</td>
+                        <td style="text-align: right;">Q ${formatNumber(box.total_sales)}</td>
+                        <td style="text-align: right;">Q ${formatNumber(box.closing_amount)}</td>
+                        <td style="text-align: right; color: ${box.difference >= 0 ? 'green' : 'red'};">Q ${formatNumber(box.difference)}</td>
+                        <td>${box.opened_by}</td>
+                        <td>${box.closed_by}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+    
+    container.innerHTML = html;
 }
 
 // Cash Box Module
@@ -374,6 +485,8 @@ function showNewSaleForm() {
     document.getElementById('new-sale-section').style.display = 'block';
     document.getElementById('current-sale-section').style.display = 'none';
     document.getElementById('pending-sales-section').style.display = 'none';
+    // Show header actions
+    document.getElementById('sales-header-actions').style.display = 'flex';
 }
 
 async function loadPendingSales() {
@@ -437,6 +550,8 @@ function showCurrentSale() {
     document.getElementById('new-sale-section').style.display = 'none';
     document.getElementById('current-sale-section').style.display = 'block';
     document.getElementById('pending-sales-section').style.display = 'none';
+    // Hide header actions
+    document.getElementById('sales-header-actions').style.display = 'none';
 
     const sale = state.currentSale;
     document.getElementById('current-sale-id').textContent = sale.id;
@@ -562,11 +677,11 @@ function selectProduct(index) {
     document.getElementById('product-description').textContent = product.description || 'Sin descripción';
     document.getElementById('selected-product-id').value = product.id;
     
-    // Populate presentations dropdown
+    // Populate presentations dropdown with IVA included prices
     const select = document.getElementById('presentation-select');
     select.innerHTML = '<option value="">Seleccione presentación</option>' + 
         product.presentations.map(p => 
-            `<option value="${p.id}" data-price="${p.price}">${p.name} - Q ${parseFloat(p.price).toFixed(2)}</option>`
+            `<option value="${p.id}" data-price="${p.price_with_iva}">${p.name} - Q ${parseFloat(p.price_with_iva).toFixed(2)} (IVA incluido)</option>`
         ).join('');
     
     // Show product result section
@@ -581,11 +696,17 @@ function selectProduct(index) {
 function showAddStockForm() {
     document.getElementById('add-stock-section').style.display = 'block';
     document.getElementById('check-stock-section').style.display = 'none';
+    // Limpiar resultados previos
+    document.getElementById('stock-result').innerHTML = '';
+    document.getElementById('stock-batches-list').innerHTML = '';
 }
 
 function showCheckStockForm() {
     document.getElementById('add-stock-section').style.display = 'none';
     document.getElementById('check-stock-section').style.display = 'block';
+    // Limpiar resultados previos
+    document.getElementById('stock-result').innerHTML = '';
+    document.getElementById('stock-batches-list').innerHTML = '';
 }
 
 // Fiscal Module
@@ -602,6 +723,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (state.token && state.user) {
         initApp();
     }
+
+    // Load product categories for catalog filter
+    loadProductCategories();
 
     // Login form
     document.getElementById('login-form').addEventListener('submit', async (e) => {
@@ -795,10 +919,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     batch_number: data.batch_number || null
                 })
             });
-            showToast('Stock agregado correctamente', 'success');
+            showToast('✅ Stock agregado correctamente', 'success');
             e.target.reset();
         } catch (error) {
-            // Error shown
+            // Error shown by apiRequest
         }
     });
 
@@ -808,67 +932,66 @@ document.addEventListener('DOMContentLoaded', () => {
         const productId = e.target.product_id.value;
 
         try {
+            // Consultar disponibilidad
             const response = await apiRequest(`/stock/check/${productId}`);
             const stock = response.data;
             
             document.getElementById('stock-result').innerHTML = `
                 <div class="alert success">
-                    <strong>Stock Disponible: ${stock.available_quantity} unidades</strong><br>
+                    <strong>📦 Stock Disponible: ${stock.available_quantity} unidades</strong><br>
                     Producto ID: ${productId}
                 </div>
             `;
+            
+            // Cargar lotes automáticamente
+            try {
+                const batchesResponse = await apiRequest(`/stock/batches/${productId}`);
+                const batches = batchesResponse.data;
+                const container = document.getElementById('stock-batches-list');
+                
+                if (batches.length === 0) {
+                    container.innerHTML = '<p class="text-muted">No hay lotes disponibles para este producto</p>';
+                    return;
+                }
+
+                container.innerHTML = `
+                    <h4 style="margin-top: 20px;">Lotes de Inventario</h4>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Lote</th>
+                                <th>Cantidad Disponible</th>
+                                <th>Fecha Vencimiento</th>
+                                <th>Ubicación</th>
+                                <th>Costo Unit.</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${batches.map(batch => `
+                                <tr>
+                                    <td>${batch.batch_number || 'N/A'}</td>
+                                    <td><strong>${batch.quantity_available}</strong> / ${batch.quantity_initial}</td>
+                                    <td>${batch.expiration_date ? new Date(batch.expiration_date).toLocaleDateString('es-GT') : 'N/A'}</td>
+                                    <td>${batch.location || 'N/A'}</td>
+                                    <td>Q ${parseFloat(batch.unit_cost || 0).toFixed(2)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+            } catch (error) {
+                document.getElementById('stock-batches-list').innerHTML = `
+                    <p class="text-muted">Error al cargar lotes del producto</p>
+                `;
+            }
         } catch (error) {
             document.getElementById('stock-result').innerHTML = `
                 <div class="alert error">
-                    <strong>Error al consultar stock</strong><br>
+                    <strong>❌ Error al consultar stock</strong><br>
                     ${error.message}
                 </div>
             `;
-        }
-    });
-
-    // View batches form
-    document.getElementById('view-batches-form').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const productId = e.target.product_id.value;
-
-        try {
-            const response = await apiRequest(`/stock/batches/${productId}`);
-            const batches = response.data;
-
-            const container = document.getElementById('stock-batches-list');
-            
-            if (batches.length === 0) {
-                container.innerHTML = '<p class="text-muted">No hay lotes disponibles para este producto</p>';
-                return;
-            }
-
-            container.innerHTML = `
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>Lote</th>
-                            <th>Cantidad Disponible</th>
-                            <th>Fecha Vencimiento</th>
-                            <th>Ubicación</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${batches.map(batch => `
-                            <tr>
-                                <td>${batch.batch_number || 'N/A'}</td>
-                                <td>${batch.quantity_available} / ${batch.quantity_initial}</td>
-                                <td>${batch.expiration_date ? new Date(batch.expiration_date).toLocaleDateString() : 'N/A'}</td>
-                                <td>${batch.location || 'N/A'}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            `;
-        } catch (error) {
-            document.getElementById('stock-batches-list').innerHTML = `
-                <p class="text-muted">Error al cargar lotes</p>
-            `;
+            document.getElementById('stock-batches-list').innerHTML = '';
         }
     });
 
@@ -894,4 +1017,389 @@ document.addEventListener('DOMContentLoaded', () => {
             // Error shown
         }
     });
+
+    // Product form
+    document.getElementById('product-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const data = Object.fromEntries(formData);
+
+        // Remove empty category_id
+        if (!data.category_id) {
+            delete data.category_id;
+        }
+
+        try {
+            if (currentEditingProductId) {
+                // Update existing product
+                await apiRequest(`/products/${currentEditingProductId}`, {
+                    method: 'PUT',
+                    body: JSON.stringify(data)
+                });
+                showToast('Producto actualizado exitosamente', 'success');
+            } else {
+                // Create new product
+                const response = await apiRequest('/products', {
+                    method: 'POST',
+                    body: JSON.stringify(data)
+                });
+                showToast('Producto creado exitosamente', 'success');
+                
+                // Switch to edit mode to allow adding presentations
+                currentEditingProductId = response.data.id;
+                editProduct(response.data.id);
+            }
+        } catch (error) {
+            // Error shown by apiRequest
+        }
+    });
+
+    // Add presentation form
+    document.getElementById('add-presentation-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        if (!currentEditingProductId) {
+            showToast('Debe guardar el producto primero', 'error');
+            return;
+        }
+
+        const formData = new FormData(e.target);
+        const data = Object.fromEntries(formData);
+        delete data.presentation_id; // Remove from data object
+
+        try {
+            if (currentEditingPresentationId) {
+                // Update existing presentation
+                await apiRequest(`/products/presentations/${currentEditingPresentationId}`, {
+                    method: 'PUT',
+                    body: JSON.stringify(data)
+                });
+                showToast('Presentación actualizada exitosamente', 'success');
+                cancelPresentationEdit();
+            } else {
+                // Add new presentation
+                await apiRequest(`/products/${currentEditingProductId}/presentations`, {
+                    method: 'POST',
+                    body: JSON.stringify(data)
+                });
+                showToast('Presentación agregada exitosamente', 'success');
+                e.target.reset();
+            }
+            
+            // Reload product to show updated presentations
+            editProduct(currentEditingProductId);
+        } catch (error) {
+            // Error shown by apiRequest
+        }
+    });
 });
+
+// Utility Functions
+function formatNumber(number) {
+    return parseFloat(number).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+function formatDate(dateString) {
+    const date = new Date(dateString);
+    const options = { year: 'numeric', month: 'short', day: 'numeric' };
+    return date.toLocaleDateString('es-GT', options);
+}
+
+function formatDateTime(dateString) {
+    const date = new Date(dateString);
+    const options = { 
+        year: 'numeric', 
+        month: 'short', 
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    };
+    return date.toLocaleDateString('es-GT', options);
+}
+
+// Product Catalog Module
+let catalogState = {
+    currentPage: 1,
+    lastPage: 1,
+    perPage: 12
+};
+
+async function loadProductCatalog(page = 1) {
+    try {
+        const search = document.getElementById('catalog-search').value;
+        const categoryId = document.getElementById('catalog-category-filter').value;
+        
+        const params = new URLSearchParams({
+            per_page: catalogState.perPage,
+            page: page
+        });
+        
+        if (search) params.append('search', search);
+        if (categoryId) params.append('category_id', categoryId);
+        
+        const response = await apiRequest(`/products/catalog?${params.toString()}`);
+        const products = response.data;
+        const pagination = response.pagination;
+        
+        catalogState.currentPage = pagination.current_page;
+        catalogState.lastPage = pagination.last_page;
+        
+        renderProductCatalog(products);
+        updateCatalogPagination();
+    } catch (error) {
+        document.getElementById('products-grid').innerHTML = '<p class="text-muted">Error al cargar productos</p>';
+    }
+}
+
+function renderProductCatalog(products) {
+    const grid = document.getElementById('products-grid');
+    
+    if (!products || products.length === 0) {
+        grid.innerHTML = '<p class="text-muted">No se encontraron productos</p>';
+        return;
+    }
+    
+    grid.innerHTML = products.map(product => {
+        const stockClass = product.total_stock > 50 ? 'high' : product.total_stock > 20 ? 'medium' : 'low';
+        const locations = product.locations.length > 0 ? product.locations.join(', ') : 'Sin ubicación';
+        const categoryBadge = product.category_name === 'Sin categoría' 
+            ? '<span style="font-size: 11px; background: #f1f5f9; color: #64748b; padding: 2px 8px; border-radius: 4px;">🏷️ Sin categoría</span>'
+            : `<span style="font-size: 11px; background: #e0e7ff; color: #4338ca; padding: 2px 8px; border-radius: 4px;">🏷️ ${product.category_name}</span>`;
+        
+        return `
+            <div class="product-card">
+                <div class="product-card-header">
+                    <div style="flex: 1;">
+                        <div class="product-card-title">${product.name}</div>
+                        <div class="product-card-barcode">${product.barcode}</div>
+                        <div style="margin-top: 4px;">${categoryBadge}</div>
+                    </div>
+                </div>
+                <div class="product-card-price">Q ${formatNumber(product.price_with_iva)}</div>
+                <div style="font-size: 12px; color: #64748b; margin-bottom: 8px;">
+                    Base: Q ${formatNumber(product.base_price)} + IVA
+                </div>
+                <div class="product-card-stock">
+                    <span>Stock: ${product.total_stock} unidades</span>
+                    <span class="stock-badge ${stockClass}">${stockClass === 'high' ? 'Alto' : stockClass === 'medium' ? 'Medio' : 'Bajo'}</span>
+                </div>
+                <div style="font-size: 12px; color: #64748b; margin-top: 8px; padding-top: 8px; border-top: 1px solid #f1f5f9;">
+                    📍 ${locations}
+                </div>
+                <button class="btn btn-sm btn-primary" onclick="editProduct(${product.id})" style="width: 100%; margin-top: 12px;">
+                    ✏️ Editar
+                </button>
+            </div>
+        `;
+    }).join('');
+}
+
+function updateCatalogPagination() {
+    const pagination = document.getElementById('catalog-pagination');
+    const prevBtn = document.getElementById('prev-page-btn');
+    const nextBtn = document.getElementById('next-page-btn');
+    const pageInfo = document.getElementById('page-info');
+    
+    pagination.style.display = 'flex';
+    pageInfo.textContent = `Página ${catalogState.currentPage} de ${catalogState.lastPage}`;
+    
+    prevBtn.disabled = catalogState.currentPage === 1;
+    nextBtn.disabled = catalogState.currentPage === catalogState.lastPage;
+}
+
+function changeCatalogPage(direction) {
+    if (direction === 'prev' && catalogState.currentPage > 1) {
+        loadProductCatalog(catalogState.currentPage - 1);
+    } else if (direction === 'next' && catalogState.currentPage < catalogState.lastPage) {
+        loadProductCatalog(catalogState.currentPage + 1);
+    }
+}
+
+async function loadProductCategories() {
+    try {
+        const response = await apiRequest('/products/categories');
+        const categories = response.data;
+        
+        // Update catalog filter
+        const catalogSelect = document.getElementById('catalog-category-filter');
+        if (catalogSelect) {
+            catalogSelect.innerHTML = '<option value="">Todas las categorías</option>';
+            categories.forEach(category => {
+                const option = document.createElement('option');
+                option.value = category.id;
+                option.textContent = category.name;
+                catalogSelect.appendChild(option);
+            });
+        }
+
+        // Update product form category select
+        const formSelect = document.getElementById('product-category');
+        if (formSelect) {
+            formSelect.innerHTML = '<option value="">Sin categoría</option>';
+            categories.forEach(category => {
+                const option = document.createElement('option');
+                option.value = category.id;
+                option.textContent = category.name;
+                formSelect.appendChild(option);
+            });
+        }
+    } catch (error) {
+        console.error('Error loading categories:', error);
+    }
+}
+
+// Product CRUD Functions
+let currentEditingProductId = null;
+let currentEditingPresentationId = null;
+
+function showNewProductForm() {
+    currentEditingProductId = null;
+    document.getElementById('product-form-section').style.display = 'block';
+    document.getElementById('catalog-view-section').style.display = 'none';
+    document.getElementById('product-form-title').textContent = 'Nuevo Producto';
+    document.getElementById('product-form').reset();
+    document.getElementById('product-id').value = '';
+    document.getElementById('presentations-section').style.display = 'none';
+    document.getElementById('save-product-btn').textContent = 'Guardar Producto';
+    
+    // Toggle button
+    document.getElementById('new-product-btn').style.display = 'none';
+}
+
+function cancelProductForm() {
+    currentEditingProductId = null;
+    document.getElementById('product-form-section').style.display = 'none';
+    document.getElementById('catalog-view-section').style.display = 'block';
+    
+    // Toggle button
+    document.getElementById('new-product-btn').style.display = 'inline-block';
+    
+    loadProductCatalog();
+}
+
+async function editProduct(productId) {
+    try {
+        currentEditingProductId = productId;
+        const response = await apiRequest(`/products/${productId}`);
+        const product = response.data;
+
+        // Show form
+        document.getElementById('product-form-section').style.display = 'block';
+        document.getElementById('catalog-view-section').style.display = 'none';
+        document.getElementById('product-form-title').textContent = 'Editar Producto';
+        document.getElementById('save-product-btn').textContent = 'Actualizar Producto';
+        
+        // Toggle button
+        document.getElementById('new-product-btn').style.display = 'none';
+
+        // Fill form
+        document.getElementById('product-id').value = product.id;
+        document.getElementById('product-barcode').value = product.barcode;
+        document.querySelector('#product-form input[name="name"]').value = product.name;
+        document.querySelector('#product-form textarea[name="description"]').value = product.description || '';
+        document.querySelector('#product-form select[name="category_id"]').value = product.category_id || '';
+
+        // Show presentations section
+        document.getElementById('presentations-section').style.display = 'block';
+        renderPresentations(product.presentations);
+    } catch (error) {
+        showToast('Error al cargar el producto', 'error');
+    }
+}
+
+function renderPresentations(presentations) {
+    const container = document.getElementById('presentations-list');
+    
+    if (!presentations || presentations.length === 0) {
+        container.innerHTML = '<p class="text-muted">No hay presentaciones agregadas</p>';
+        return;
+    }
+
+    container.innerHTML = `
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Nombre</th>
+                    <th>Precio (sin IVA)</th>
+                    <th>Precio (con IVA)</th>
+                    <th>Unidades</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${presentations.map(p => `
+                    <tr>
+                        <td>${p.name}</td>
+                        <td>Q ${formatNumber(p.price)}</td>
+                        <td>Q ${formatNumber(p.price * 1.12)}</td>
+                        <td>${p.factor || 1}</td>
+                        <td>
+                            <button class="btn btn-sm btn-primary" onclick="editPresentation(${p.id}, '${p.name}', ${p.price}, ${p.factor || 1})" style="margin-right: 5px;">Editar</button>
+                            <button class="btn btn-sm btn-danger" onclick="deletePresentation(${p.id})">Eliminar</button>
+                        </td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+}
+
+function editPresentation(presentationId, name, price, factor) {
+    currentEditingPresentationId = presentationId;
+    
+    // Update form title and button
+    document.getElementById('presentation-form-title').textContent = 'Editar Presentación';
+    document.getElementById('save-presentation-btn').textContent = 'Actualizar Presentación';
+    document.getElementById('cancel-presentation-btn').style.display = 'inline-block';
+    
+    // Fill form
+    document.getElementById('presentation-id').value = presentationId;
+    document.getElementById('presentation-name').value = name;
+    document.getElementById('presentation-price').value = price;
+    document.getElementById('presentation-factor').value = factor;
+    
+    // Scroll to form
+    document.getElementById('add-presentation-form').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function cancelPresentationEdit() {
+    currentEditingPresentationId = null;
+    
+    // Reset form
+    document.getElementById('add-presentation-form').reset();
+    document.getElementById('presentation-id').value = '';
+    
+    // Update form title and button
+    document.getElementById('presentation-form-title').textContent = 'Agregar Nueva Presentación';
+    document.getElementById('save-presentation-btn').textContent = 'Agregar Presentación';
+    document.getElementById('cancel-presentation-btn').style.display = 'none';
+}
+
+async function deletePresentation(presentationId) {
+    if (!confirm('¿Está seguro de eliminar esta presentación?')) return;
+
+    try {
+        await apiRequest(`/products/presentations/${presentationId}`, {
+            method: 'DELETE'
+        });
+        showToast('Presentación eliminada', 'success');
+        
+        // Reload product
+        if (currentEditingProductId) {
+            editProduct(currentEditingProductId);
+        }
+    } catch (error) {
+        // Error shown by apiRequest
+    }
+}
+
+// Initialize catalog search with real-time filtering
+if (document.getElementById('catalog-search')) {
+    let catalogSearchTimeout;
+    document.getElementById('catalog-search').addEventListener('input', (e) => {
+        clearTimeout(catalogSearchTimeout);
+        catalogSearchTimeout = setTimeout(() => {
+            loadProductCatalog(1);
+        }, 500);
+    });
+}

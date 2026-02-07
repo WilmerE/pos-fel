@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CashBoxController;
+use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\FiscalController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\SaleController;
@@ -23,6 +24,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
 
+    // Dashboard
+    Route::get('/dashboard/stats', [DashboardController::class, 'getStats']);
+
     // Sales
     Route::prefix('sales')->group(function () {
         Route::post('/', [SaleController::class, 'create']);
@@ -38,6 +42,14 @@ Route::middleware('auth:sanctum')->group(function () {
     // Products
     Route::prefix('products')->group(function () {
         Route::get('/search', [ProductController::class, 'search']);
+        Route::get('/catalog', [ProductController::class, 'catalog']);
+        Route::get('/categories', [ProductController::class, 'categories']);
+        Route::post('/', [ProductController::class, 'store']);
+        Route::get('/{productId}', [ProductController::class, 'show']);
+        Route::put('/{productId}', [ProductController::class, 'update']);
+        Route::post('/{productId}/presentations', [ProductController::class, 'addPresentation']);
+        Route::put('/presentations/{presentationId}', [ProductController::class, 'updatePresentation']);
+        Route::delete('/presentations/{presentationId}', [ProductController::class, 'deletePresentation']);
         Route::get('/presentations/{presentationId}', [ProductController::class, 'getPresentation']);
     });
 

@@ -22,6 +22,11 @@ class Product extends Model
         'active' => 'boolean',
     ];
 
+    public function category()
+    {
+        return $this->belongsTo(Category::class);
+    }
+
     public function presentations(): HasMany
     {
         return $this->hasMany(ProductPresentation::class);

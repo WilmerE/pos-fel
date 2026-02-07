@@ -53,6 +53,7 @@ class ProductController extends Controller
                             'id' => $presentation->id,
                             'name' => $presentation->name,
                             'price' => $presentation->price,
+                            'price_with_iva' => round($presentation->price * 1.12, 2),
                             'units_per_presentation' => $presentation->units_per_presentation,
                         ];
                     }),
@@ -86,6 +87,303 @@ class ProductController extends Controller
                 'price' => $presentation->price,
                 'units_per_presentation' => $presentation->units_per_presentation,
             ],
+        ]);
+    }
+
+    /**
+     * Get product catalog with pagination and filters
+     * Permission: view_stock
+     */
+    public function catalog(Request $request): JsonResponse
+    {
+        if (!$request->user()->hasPermission('view_stock')) {
+            return response()->json([
+                'message' => 'No tienes permiso para ver el catálogo.',
+            ], 403);
+        }
+
+        $perPage = $request->input('per_page', 12);
+        $search = $request->input('search');
+        $categoryId = $request->input('category_id');
+
+        $query = Product::with(['presentations', 'stockBatches', 'category'])
+            ->where('active', true);
+
+        // Apply search filter
+        if (!empty($search)) {
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('barcode', 'like', "%{$search}%");
+            });
+        }
+
+        // Apply category filter
+        if (!empty($categoryId)) {
+            $query->where('category_id', $categoryId);
+        }
+
+        $products = $query->paginate($perPage);
+
+        return response()->json([
+            'message' => 'Catálogo obtenido exitosamente.',
+            'data' => $products->map(function ($product) {
+                $totalStock = $product->stockBatches->sum('quantity_available');
+                $locations = $product->stockBatches->pluck('location')->filter()->unique()->values();
+                
+                // Get base price from first presentation
+                $basePrice = $product->presentations->first()->price ?? 0;
+                $priceWithIva = $basePrice * 1.12;
+
+                return [
+                    'id' => $product->id,
+                    'name' => $product->name,
+                    'description' => $product->description,
+                    'barcode' => $product->barcode,
+                    'category_id' => $product->category_id,
+                    'category_name' => $product->category ? $product->category->name : 'Sin categoría',
+                    'base_price' => round($basePrice, 2),
+                    'price_with_iva' => round($priceWithIva, 2),
+                    'total_stock' => $totalStock,
+                    'locations' => $locations,
+                    'presentations' => $product->presentations->map(function ($presentation) {
+                        return [
+                            'id' => $presentation->id,
+                            'name' => $presentation->name,
+                            'price' => $presentation->price,
+                            'price_with_iva' => round($presentation->price * 1.12, 2),
+                            'units_per_presentation' => $presentation->units_per_presentation,
+                        ];
+                    }),
+                ];
+            }),
+            'pagination' => [
+                'current_page' => $products->currentPage(),
+                'last_page' => $products->lastPage(),
+                'per_page' => $products->perPage(),
+                'total' => $products->total(),
+            ],
+        ]);
+    }
+
+    /**
+     * Get all product categories
+     */
+    public function categories(Request $request): JsonResponse
+    {
+        $categories = \App\Models\Category::where('active', true)
+            ->orderBy('name')
+            ->get()
+            ->map(function ($category) {
+                return [
+                    'id' => $category->id,
+                    'name' => $category->name,
+                    'description' => $category->description,
+                ];
+            });
+
+        return response()->json([
+            'message' => 'Categorías obtenidas exitosamente.',
+            'data' => $categories,
+        ]);
+    }
+
+    /**
+     * Create a new product
+     * Permission: manage_products
+     */
+    public function store(Request $request): JsonResponse
+    {
+        if (!$request->user()->hasPermission('manage_products')) {
+            return response()->json([
+                'message' => 'No tienes permiso para crear productos.',
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'barcode' => 'required|string|unique:products,barcode',
+            'name' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'category_id' => 'nullable|exists:categories,id',
+        ], [
+            'barcode.required' => 'El código de barras es obligatorio.',
+            'barcode.unique' => 'Este código de barras ya existe.',
+            'name.required' => 'El nombre del producto es obligatorio.',
+            'category_id.exists' => 'La categoría seleccionada no existe.',
+        ]);
+
+        $product = Product::create($validated);
+
+        return response()->json([
+            'message' => 'Producto creado exitosamente.',
+            'data' => $product,
+        ], 201);
+    }
+
+    /**
+     * Get product details by ID
+     * Permission: view_stock
+     */
+    public function show(Request $request, int $productId): JsonResponse
+    {
+        if (!$request->user()->hasPermission('view_stock')) {
+            return response()->json([
+                'message' => 'No tienes permiso para ver productos.',
+            ], 403);
+        }
+
+        $product = Product::with(['presentations', 'category'])
+            ->findOrFail($productId);
+
+        return response()->json([
+            'message' => 'Producto obtenido exitosamente.',
+            'data' => [
+                'id' => $product->id,
+                'barcode' => $product->barcode,
+                'name' => $product->name,
+                'description' => $product->description,
+                'category_id' => $product->category_id,
+                'category_name' => $product->category ? $product->category->name : null,
+                'active' => $product->active,
+                'presentations' => $product->presentations->map(function ($p) {
+                    return [
+                        'id' => $p->id,
+                        'name' => $p->name,
+                        'price' => $p->price,
+                        'factor' => $p->factor,
+                    ];
+                }),
+            ],
+        ]);
+    }
+
+    /**
+     * Update a product
+     * Permission: manage_products
+     */
+    public function update(Request $request, int $productId): JsonResponse
+    {
+        if (!$request->user()->hasPermission('manage_products')) {
+            return response()->json([
+                'message' => 'No tienes permiso para actualizar productos.',
+            ], 403);
+        }
+
+        $product = Product::findOrFail($productId);
+
+        $validated = $request->validate([
+            'barcode' => 'sometimes|required|string|unique:products,barcode,' . $productId,
+            'name' => 'sometimes|required|string|max:255',
+            'description' => 'nullable|string',
+            'category_id' => 'nullable|exists:categories,id',
+            'active' => 'sometimes|boolean',
+        ], [
+            'barcode.unique' => 'Este código de barras ya existe.',
+            'name.required' => 'El nombre del producto es obligatorio.',
+            'category_id.exists' => 'La categoría seleccionada no existe.',
+        ]);
+
+        $product->update($validated);
+
+        return response()->json([
+            'message' => 'Producto actualizado exitosamente.',
+            'data' => $product->fresh(['category']),
+        ]);
+    }
+
+    /**
+     * Add presentation to a product
+     * Permission: manage_products
+     */
+    public function addPresentation(Request $request, int $productId): JsonResponse
+    {
+        if (!$request->user()->hasPermission('manage_products')) {
+            return response()->json([
+                'message' => 'No tienes permiso para agregar presentaciones.',
+            ], 403);
+        }
+
+        $product = Product::findOrFail($productId);
+
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'price' => 'required|numeric|min:0',
+            'factor' => 'required|integer|min:1',
+        ], [
+            'name.required' => 'El nombre de la presentación es obligatorio.',
+            'price.required' => 'El precio es obligatorio.',
+            'price.min' => 'El precio debe ser mayor o igual a 0.',
+            'factor.required' => 'Las unidades por presentación son obligatorias.',
+            'factor.min' => 'Debe haber al menos 1 unidad por presentación.',
+        ]);
+
+        $presentation = $product->presentations()->create($validated);
+
+        return response()->json([
+            'message' => 'Presentación agregada exitosamente.',
+            'data' => $presentation,
+        ], 201);
+    }
+
+    /**
+     * Update a product presentation
+     * Permission: manage_products
+     */
+    public function updatePresentation(Request $request, int $presentationId): JsonResponse
+    {
+        if (!$request->user()->hasPermission('manage_products')) {
+            return response()->json([
+                'message' => 'No tienes permiso para actualizar presentaciones.',
+            ], 403);
+        }
+
+        $presentation = \App\Models\ProductPresentation::findOrFail($presentationId);
+
+        $validated = $request->validate([
+            'name' => 'sometimes|required|string|max:255',
+            'price' => 'sometimes|required|numeric|min:0',
+            'factor' => 'sometimes|required|integer|min:1',
+            'factor' => 'sometimes|integer|min:1',
+        ], [
+            'name.required' => 'El nombre de la presentación es obligatorio.',
+            'price.min' => 'El precio debe ser mayor o igual a 0.',
+            'units_per_presentation.min' => 'Debe haber al menos 1 unidad por presentación.',
+        ]);
+
+        $presentation->update($validated);
+
+        return response()->json([
+            'message' => 'Presentación actualizada exitosamente.',
+            'data' => $presentation->fresh(),
+        ]);
+    }
+
+    /**
+     * Delete a product presentation
+     * Permission: manage_products
+     */
+    public function deletePresentation(Request $request, int $presentationId): JsonResponse
+    {
+        if (!$request->user()->hasPermission('manage_products')) {
+            return response()->json([
+                'message' => 'No tienes permiso para eliminar presentaciones.',
+            ], 403);
+        }
+
+        $presentation = \App\Models\ProductPresentation::findOrFail($presentationId);
+        
+        // Check if it's the last presentation
+        $productPresentationsCount = \App\Models\ProductPresentation::where('product_id', $presentation->product_id)->count();
+        
+        if ($productPresentationsCount <= 1) {
+            return response()->json([
+                'message' => 'No se puede eliminar la única presentación del producto.',
+            ], 400);
+        }
+
+        $presentation->delete();
+
+        return response()->json([
+            'message' => 'Presentación eliminada exitosamente.',
         ]);
     }
 }
