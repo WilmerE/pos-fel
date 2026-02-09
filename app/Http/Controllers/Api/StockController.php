@@ -32,18 +32,18 @@ class StockController extends Controller
 
         $validator = Validator::make($request->all(), [
             'product_id' => 'required|exists:products,id',
+            'presentation_id' => 'required|exists:product_presentations,id',
             'batch_number' => 'nullable|string|max:50',
             'expiration_date' => 'nullable|date',
             'quantity' => 'required|integer|min:1',
-            'unit_cost' => 'required|numeric|min:0.01',
             'location' => 'nullable|string|max:100',
         ], [
             'product_id.required' => 'El producto es obligatorio.',
             'product_id.exists' => 'El producto no existe.',
+            'presentation_id.required' => 'La presentación es obligatoria.',
+            'presentation_id.exists' => 'La presentación no existe.',
             'quantity.required' => 'La cantidad es obligatoria.',
             'quantity.min' => 'La cantidad debe ser al menos 1.',
-            'unit_cost.required' => 'El costo unitario es obligatorio.',
-            'unit_cost.min' => 'El costo debe ser mayor a 0.',
         ]);
 
         if ($validator->fails()) {
@@ -56,6 +56,7 @@ class StockController extends Controller
         try {
             $stockBatch = $this->stockService->addStock(
                 productId: $request->product_id,
+                presentationId: $request->presentation_id,
                 batchNumber: $request->batch_number ?? 'LOTE-' . time(),
                 expirationDate: $request->expiration_date,
                 quantity: $request->quantity,

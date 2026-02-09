@@ -22,20 +22,36 @@ const state = {
 };
 
 // API Helper
-async function apiRequest(endpoint, options = {}) {
+async function apiRequest(endpoint, options) {
+    if (!options) options = {};
+    
     showLoading();
     try {
-        const config = {
-            ...options,
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                ...(state.token ? { 'Authorization': `Bearer ${state.token}` } : {}),
-                ...options.headers
-            }
+        var headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
         };
+        
+        if (state.token) {
+            headers['Authorization'] = 'Bearer ' + state.token;
+        }
+        
+        if (options.headers) {
+            for (var key in options.headers) {
+                headers[key] = options.headers[key];
+            }
+        }
+        
+        const config = {
+            method: options.method || 'GET',
+            headers: headers
+        };
+        
+        if (options.body) {
+            config.body = options.body;
+        }
 
-        const response = await fetch(`${state.apiUrl}${endpoint}`, config);
+        const response = await fetch(state.apiUrl + endpoint, config);
         const data = await response.json();
 
         if (!response.ok) {
@@ -88,18 +104,30 @@ function hideLoading() {
     document.getElementById('loading-overlay').classList.remove('show');
 }
 
-function showToast(message, type = 'info') {
+function showToast(message, type) {
+    if (!type) type = 'info';
+    
     const container = document.getElementById('toast-container');
     const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
-    toast.innerHTML = `
-        <span>${message}</span>
-    `;
+    toast.className = 'toast ' + type;
+    toast.innerHTML = '<span>' + message + '</span>';
     container.appendChild(toast);
 
-    setTimeout(() => {
+    setTimeout(function() {
         toast.remove();
     }, 4000);
+}
+
+// Alias for showToast to match import code
+function showNotification(message, type) {
+    if (!type) type = 'info';
+    showToast(message, type);
+}
+
+// Alias for showToast
+function showAlert(message, type) {
+    if (!type) type = 'info';
+    showToast(message, type);
 }
 
 function switchScreen(screenId) {
@@ -172,6 +200,11 @@ function initApp() {
     switchScreen('app-screen');
     document.getElementById('user-name').textContent = state.user.name;
     document.getElementById('user-role').textContent = state.user.roles?.[0] || 'Usuario';
+    
+    // Load initial data that requires authentication
+    loadProductCategories();
+    loadSuppliers();
+    
     loadModuleData('dashboard');
 }
 
@@ -188,6 +221,7 @@ async function loadModuleData(moduleName) {
             initSalesModule();
             break;
         case 'stock':
+            initStockModule();
             break;
         case 'products':
             loadProductCatalog();
@@ -737,20 +771,27 @@ function selectProduct(index) {
 }
 
 // Stock Module
+function initStockModule() {
+    // Show check stock section by default
+    document.getElementById('check-stock-section').style.display = 'block';
+    document.getElementById('add-stock-section').style.display = 'none';
+    document.getElementById('stock-header-actions').style.display = 'flex';
+}
+
 function showAddStockForm() {
     document.getElementById('add-stock-section').style.display = 'block';
     document.getElementById('check-stock-section').style.display = 'none';
-    // Limpiar resultados previos
-    document.getElementById('stock-result').innerHTML = '';
-    document.getElementById('stock-batches-list').innerHTML = '';
+    // Hide header actions
+    document.getElementById('stock-header-actions').style.display = 'none';
 }
 
-function showCheckStockForm() {
+function cancelAddStock() {
+    // Reset form
+    document.getElementById('add-stock-form').reset();
+    // Show check stock section and hide add form
     document.getElementById('add-stock-section').style.display = 'none';
     document.getElementById('check-stock-section').style.display = 'block';
-    // Limpiar resultados previos
-    document.getElementById('stock-result').innerHTML = '';
-    document.getElementById('stock-batches-list').innerHTML = '';
+    document.getElementById('stock-header-actions').style.display = 'flex';
 }
 
 // Fiscal Module
@@ -768,8 +809,12 @@ document.addEventListener('DOMContentLoaded', () => {
         initApp();
     }
 
-    // Load product categories for catalog filter
-    loadProductCategories();
+    // Close modal when clicking outside
+    document.getElementById('product-details-modal')?.addEventListener('click', (e) => {
+        if (e.target.id === 'product-details-modal') {
+            closeProductDetails();
+        }
+    });
 
     // Login form
     document.getElementById('login-form').addEventListener('submit', async (e) => {
@@ -951,13 +996,19 @@ document.addEventListener('DOMContentLoaded', () => {
         const formData = new FormData(e.target);
         const data = Object.fromEntries(formData);
 
+        // Validate presentation_id
+        if (!data.presentation_id) {
+            showToast('Debe seleccionar una presentación', 'error');
+            return;
+        }
+
         try {
             await apiRequest('/stock/add', {
                 method: 'POST',
                 body: JSON.stringify({
                     product_id: parseInt(data.product_id),
+                    presentation_id: parseInt(data.presentation_id),
                     quantity: parseInt(data.quantity),
-                    unit_cost: parseFloat(data.unit_cost),
                     expiration_date: data.expiration_date || null,
                     location: data.location || null,
                     batch_number: data.batch_number || null
@@ -965,8 +1016,43 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             showToast('✅ Stock agregado correctamente', 'success');
             e.target.reset();
+            // Clear presentation select
+            document.getElementById('stock-presentation').innerHTML = '<option value="">Seleccione presentación</option>';
+            // Hide form and show check stock section
+            cancelAddStock();
         } catch (error) {
             // Error shown by apiRequest
+        }
+    });
+
+    // Load presentations when product is selected in stock form
+    document.getElementById('stock-product-id').addEventListener('change', async (e) => {
+        const productId = e.target.value;
+        const presentationSelect = document.getElementById('stock-presentation');
+        
+        if (!productId) {
+            presentationSelect.innerHTML = '<option value="">Seleccione presentación</option>';
+            return;
+        }
+
+        try {
+            const response = await apiRequest(`/products/${productId}`);
+            const product = response.data;
+            
+            presentationSelect.innerHTML = '<option value="">Seleccione presentación</option>';
+            
+            if (product.presentations && product.presentations.length > 0) {
+                product.presentations.forEach(p => {
+                    const option = document.createElement('option');
+                    option.value = p.id;
+                    option.textContent = `${p.name} (${p.factor} unidades)`;
+                    presentationSelect.appendChild(option);
+                });
+            } else {
+                presentationSelect.innerHTML = '<option value="">Sin presentaciones disponibles</option>';
+            }
+        } catch (error) {
+            presentationSelect.innerHTML = '<option value="">Error al cargar presentaciones</option>';
         }
     });
 
@@ -1000,7 +1086,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 container.innerHTML = `
                     <h4 style="margin-top: 20px;">Lotes de Inventario</h4>
-                    <table class="table">
+                    <table class="data-table">
                         <thead>
                             <tr>
                                 <th>Lote</th>
@@ -1068,10 +1154,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const formData = new FormData(e.target);
         const data = Object.fromEntries(formData);
 
-        // Remove empty category_id
-        if (!data.category_id) {
-            delete data.category_id;
-        }
+        // Remove empty fields
+        if (!data.category_id) delete data.category_id;
+        if (!data.brand) delete data.brand;
+        if (!data.location) delete data.location;
+        if (!data.supplier_id) delete data.supplier_id;
 
         try {
             if (currentEditingProductId) {
@@ -1210,13 +1297,18 @@ function renderProductCatalog(products) {
             ? '<span style="font-size: 11px; background: #f1f5f9; color: #64748b; padding: 2px 8px; border-radius: 4px;">🏷️ Sin categoría</span>'
             : `<span style="font-size: 11px; background: #e0e7ff; color: #4338ca; padding: 2px 8px; border-radius: 4px;">🏷️ ${product.category_name}</span>`;
         
+        const brandInfo = product.brand ? `<div style="font-size: 11px; color: #64748b; margin-top: 4px;">🏭 ${product.brand}</div>` : '';
+        const locationInfo = product.location ? `<div style="font-size: 11px; color: #64748b; margin-top: 4px;">📍 ${product.location}</div>` : '';
+        
         return `
-            <div class="product-card">
+            <div class="product-card" onclick="showProductDetails(${product.id})" style="cursor: pointer;">
                 <div class="product-card-header">
                     <div style="flex: 1;">
                         <div class="product-card-title">${product.name}</div>
                         <div class="product-card-barcode">${product.barcode}</div>
                         <div style="margin-top: 4px;">${categoryBadge}</div>
+                        ${brandInfo}
+                        ${locationInfo}
                     </div>
                 </div>
                 <div class="product-card-price">Q ${formatNumber(product.price_with_iva)}</div>
@@ -1228,9 +1320,9 @@ function renderProductCatalog(products) {
                     <span class="stock-badge ${stockClass}">${stockClass === 'high' ? 'Alto' : stockClass === 'medium' ? 'Medio' : 'Bajo'}</span>
                 </div>
                 <div style="font-size: 12px; color: #64748b; margin-top: 8px; padding-top: 8px; border-top: 1px solid #f1f5f9;">
-                    📍 ${locations}
+                    🗄️ ${locations}
                 </div>
-                <button class="btn btn-sm btn-primary" onclick="editProduct(${product.id})" style="width: 100%; margin-top: 12px;">
+                <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); editProduct(${product.id})" style="width: 100%; margin-top: 12px;">
                     ✏️ Editar
                 </button>
             </div>
@@ -1258,6 +1350,470 @@ function changeCatalogPage(direction) {
         loadProductCatalog(catalogState.currentPage + 1);
     }
 }
+
+// Product Details Modal
+async function showProductDetails(productId) {
+    const modal = document.getElementById('product-details-modal');
+    const content = document.getElementById('product-details-content');
+    
+    modal.style.display = 'flex';
+    content.innerHTML = '<p class="text-muted">Cargando información...</p>';
+    
+    try {
+        const response = await apiRequest(`/products/${productId}`);
+        const product = response.data;
+        
+        // Get stock batches
+        const stockResponse = await apiRequest(`/stock/batches/${productId}`);
+        const stockBatches = stockResponse.data || [];
+        
+        const categoryName = product.category_name || 'Sin categoría';
+        const supplierName = product.supplier_name || 'Sin proveedor';
+        const brand = product.brand || 'No especificada';
+        const location = product.location || 'No especificada';
+        
+        content.innerHTML = `
+            <div style="display: grid; gap: 24px;">
+                <!-- Basic Information -->
+                <div>
+                    <h3 style="margin-bottom: 16px; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">📦 Información Básica</h3>
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;">
+                        <div>
+                            <label style="font-weight: 600; color: #64748b; font-size: 12px; text-transform: uppercase;">Nombre</label>
+                            <p style="margin: 4px 0 0 0; font-size: 16px; color: #1e293b;">${product.name}</p>
+                        </div>
+                        <div>
+                            <label style="font-weight: 600; color: #64748b; font-size: 12px; text-transform: uppercase;">Código de Barras</label>
+                            <p style="margin: 4px 0 0 0; font-size: 16px; font-family: monospace; color: #1e293b;">${product.barcode}</p>
+                        </div>
+                        <div>
+                            <label style="font-weight: 600; color: #64748b; font-size: 12px; text-transform: uppercase;">Categoría</label>
+                            <p style="margin: 4px 0 0 0; font-size: 14px; color: #1e293b;">🏷️ ${categoryName}</p>
+                        </div>
+                        <div>
+                            <label style="font-weight: 600; color: #64748b; font-size: 12px; text-transform: uppercase;">Marca</label>
+                            <p style="margin: 4px 0 0 0; font-size: 14px; color: #1e293b;">🏭 ${brand}</p>
+                        </div>
+                        <div>
+                            <label style="font-weight: 600; color: #64748b; font-size: 12px; text-transform: uppercase;">Ubicación</label>
+                            <p style="margin: 4px 0 0 0; font-size: 14px; color: #1e293b;">📍 ${location}</p>
+                        </div>
+                        <div>
+                            <label style="font-weight: 600; color: #64748b; font-size: 12px; text-transform: uppercase;">Proveedor</label>
+                            <p style="margin: 4px 0 0 0; font-size: 14px; color: #1e293b;">🏢 ${supplierName}</p>
+                        </div>
+                    </div>
+                    ${product.description ? `
+                        <div style="margin-top: 16px;">
+                            <label style="font-weight: 600; color: #64748b; font-size: 12px; text-transform: uppercase;">Descripción</label>
+                            <p style="margin: 4px 0 0 0; font-size: 14px; color: #475569;">${product.description}</p>
+                        </div>
+                    ` : ''}
+                </div>
+                
+                <!-- Presentations -->
+                <div>
+                    <h3 style="margin-bottom: 16px; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">💰 Presentaciones y Precios</h3>
+                    ${product.presentations && product.presentations.length > 0 ? `
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Presentación</th>
+                                    <th>Unidades</th>
+                                    <th>Precio Compra</th>
+                                    <th>Precio Venta</th>
+                                    <th>Precio c/IVA</th>
+                                    <th>Margen</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${product.presentations.map(p => {
+                                    const margin = ((p.sale_price - p.purchase_price) / p.purchase_price * 100).toFixed(1);
+                                    const marginColor = margin > 30 ? '#10b981' : margin > 15 ? '#f59e0b' : '#64748b';
+                                    return `
+                                        <tr>
+                                            <td><strong>${p.name}</strong></td>
+                                            <td>${p.factor}</td>
+                                            <td>Q ${formatNumber(p.purchase_price)}</td>
+                                            <td>Q ${formatNumber(p.sale_price)}</td>
+                                            <td>Q ${formatNumber(p.sale_price * 1.12)}</td>
+                                            <td style="color: ${marginColor}; font-weight: 600;">${margin}%</td>
+                                        </tr>
+                                    `;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    ` : '<p class="text-muted">No hay presentaciones registradas</p>'}
+                </div>
+                
+                <!-- Stock Batches -->
+                <div>
+                    <h3 style="margin-bottom: 16px; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">📊 Inventario por Lotes</h3>
+                    ${stockBatches.length > 0 ? `
+                        <div style="margin-bottom: 12px; padding: 12px; background: #f8fafc; border-radius: 8px; border-left: 4px solid #3b82f6;">
+                            <strong style="font-size: 18px; color: #1e293b;">Total Disponible: ${stockBatches.reduce((sum, b) => sum + b.quantity_available, 0)} unidades</strong>
+                        </div>
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Lote</th>
+                                    <th>Ubicación</th>
+                                    <th>Cantidad Disponible</th>
+                                    <th>Cantidad Inicial</th>
+                                    <th>Vencimiento</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${stockBatches.map(batch => {
+                                    const expDate = batch.expiration_date ? formatDate(batch.expiration_date) : 'Sin vencimiento';
+                                    const stockPerc = (batch.quantity_available / batch.quantity_initial * 100).toFixed(0);
+                                    const stockColor = stockPerc > 50 ? '#10b981' : stockPerc > 20 ? '#f59e0b' : '#ef4444';
+                                    return `
+                                        <tr>
+                                            <td><code style="background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 13px;">${batch.batch_number}</code></td>
+                                            <td>📍 ${batch.location || 'No especificada'}</td>
+                                            <td>
+                                                <strong style="color: ${stockColor};">${batch.quantity_available}</strong>
+                                                <span style="color: #94a3b8; font-size: 12px;"> (${stockPerc}%)</span>
+                                            </td>
+                                            <td>${batch.quantity_initial}</td>
+                                            <td>${expDate}</td>
+                                        </tr>
+                                    `;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    ` : '<p class="text-muted">No hay stock disponible</p>'}
+                </div>
+            </div>
+        `;
+    } catch (error) {
+        content.innerHTML = `<p style="color: #ef4444;">Error al cargar la información del producto</p>`;
+    }
+}
+
+function closeProductDetails() {
+    document.getElementById('product-details-modal').style.display = 'none';
+}
+
+// Category Management Functions
+async function openCategoryModal() {
+    const modal = document.getElementById('category-modal');
+    modal.style.display = 'flex';
+    resetCategoryForm();
+    await loadCategoriesList();
+}
+
+function closeCategoryModal() {
+    document.getElementById('category-modal').style.display = 'none';
+    resetCategoryForm();
+}
+
+function resetCategoryForm() {
+    document.getElementById('category-id').value = '';
+    document.getElementById('category-name').value = '';
+    document.getElementById('category-description').value = '';
+    document.getElementById('category-form-title').textContent = 'Nueva Categoría';
+    document.getElementById('save-category-btn').textContent = 'Crear Categoría';
+    document.getElementById('cancel-category-btn').style.display = 'none';
+}
+
+async function loadCategoriesList() {
+    const listContainer = document.getElementById('categories-list');
+    try {
+        const response = await apiRequest('/categories');
+        const categories = response.data;
+        
+        if (categories.length === 0) {
+            listContainer.innerHTML = '<p class=\"text-muted\">No hay categorías creadas. Crea tu primera categoría arriba.</p>';
+            return;
+        }
+        
+        listContainer.innerHTML = categories.map(category => `
+            <div class=\"category-card\">
+                <div class=\"category-info\">
+                    <div class=\"category-name\">${category.name}</div>
+                    ${category.description ? `<div class=\"category-description\">${category.description}</div>` : ''}
+                    <div class=\"category-count\">${category.products_count || 0} producto(s)</div>
+                </div>
+                <div class=\"category-actions\">
+                    <button class=\"btn-icon btn-icon-edit\" onclick=\"editCategory(${category.id})\" title=\"Editar\">
+                        ✏
+                    </button>
+                    <button class=\"btn-icon btn-icon-delete\" onclick=\"deleteCategory(${category.id}, ${category.products_count || 0})\" title=\"Eliminar\">
+                        🗑
+                    </button>
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        listContainer.innerHTML = '<p style=\"color: #ef4444;\">Error al cargar las categorías</p>';
+    }
+}
+
+async function editCategory(categoryId) {
+    try {
+        const response = await apiRequest(`/categories`);
+        const category = response.data.find(c => c.id === categoryId);
+        
+        if (!category) {
+            showNotification('Categoría no encontrada', 'error');
+            return;
+        }
+        
+        document.getElementById('category-id').value = category.id;
+        document.getElementById('category-name').value = category.name;
+        document.getElementById('category-description').value = category.description || '';
+        document.getElementById('category-form-title').textContent = 'Editar Categoría';
+        document.getElementById('save-category-btn').textContent = 'Guardar Cambios';
+        document.getElementById('cancel-category-btn').style.display = 'inline-block';
+        
+        // Scroll to form
+        document.getElementById('category-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (error) {
+        showNotification('Error al cargar la categoría', 'error');
+    }
+}
+
+async function deleteCategory(categoryId, productsCount) {
+    if (productsCount > 0) {
+        showNotification(`No se puede eliminar esta categoría porque tiene ${productsCount} producto(s) asociados`, 'error');
+        return;
+    }
+    
+    if (!confirm('¿Estás seguro de que deseas eliminar esta categoría?')) {
+        return;
+    }
+    
+    try {
+        await apiRequest(`/categories/${categoryId}`, {
+            method: 'DELETE'
+        });
+        showNotification('Categoría eliminada exitosamente', 'success');
+        await loadCategoriesList();
+        await loadProductCategories(); // Refresh category dropdowns
+    } catch (error) {
+        showNotification(error.message || 'Error al eliminar la categoría', 'error');
+    }
+}
+
+// Handle category form submission
+document.addEventListener('DOMContentLoaded', () => {
+    const categoryForm = document.getElementById('category-form');
+    if (categoryForm) {
+        categoryForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const categoryId = document.getElementById('category-id').value;
+            const name = document.getElementById('category-name').value.trim();
+            const description = document.getElementById('category-description').value.trim();
+            
+            if (!name) {
+                showNotification('El nombre de la categoría es requerido', 'error');
+                return;
+            }
+            
+            try {
+                const url = categoryId ? `/categories/${categoryId}` : '/categories';
+                const method = categoryId ? 'PUT' : 'POST';
+                
+                await apiRequest(url, {
+                    method,
+                    body: JSON.stringify({ name, description })
+                });
+                
+                showNotification(
+                    categoryId ? 'Categoría actualizada exitosamente' : 'Categoría creada exitosamente',
+                    'success'
+                );
+                
+                resetCategoryForm();
+                await loadCategoriesList();
+                await loadProductCategories(); // Refresh category dropdowns
+            } catch (error) {
+                showNotification(error.message || 'Error al guardar la categoría', 'error');
+            }
+        });
+    }
+    
+    // Close category modal on click outside
+    const categoryModal = document.getElementById('category-modal');
+    if (categoryModal) {
+        categoryModal.addEventListener('click', (e) => {
+            if (e.target === categoryModal) {
+                closeCategoryModal();
+            }
+        });
+    }
+});
+
+// Supplier Management Functions
+async function openSupplierModal() {
+    const modal = document.getElementById('supplier-modal');
+    modal.style.display = 'flex';
+    resetSupplierForm();
+    await loadSuppliersList();
+}
+
+function closeSupplierModal() {
+    document.getElementById('supplier-modal').style.display = 'none';
+    resetSupplierForm();
+}
+
+function resetSupplierForm() {
+    document.getElementById('supplier-id').value = '';
+    document.getElementById('supplier-name').value = '';
+    document.getElementById('supplier-contact-name').value = '';
+    document.getElementById('supplier-phone').value = '';
+    document.getElementById('supplier-email').value = '';
+    document.getElementById('supplier-address').value = '';
+    document.getElementById('supplier-form-title').textContent = 'Nuevo Proveedor';
+    document.getElementById('save-supplier-btn').textContent = 'Crear Proveedor';
+    document.getElementById('cancel-supplier-btn').style.display = 'none';
+}
+
+async function loadSuppliersList() {
+    const listContainer = document.getElementById('suppliers-list');
+    try {
+        const response = await apiRequest('/suppliers');
+        const suppliers = response.data;
+        
+        if (suppliers.length === 0) {
+            listContainer.innerHTML = '<p class="text-muted">No hay proveedores creados. Crea tu primer proveedor arriba.</p>';
+            return;
+        }
+        
+        listContainer.innerHTML = suppliers.map(supplier => {
+            const contactInfo = [];
+            if (supplier.contact_name) contactInfo.push(`Contacto: ${supplier.contact_name}`);
+            if (supplier.phone) contactInfo.push(`Tel: ${supplier.phone}`);
+            if (supplier.email) contactInfo.push(`Email: ${supplier.email}`);
+            
+            return `
+            <div class="category-card">
+                <div class="category-info">
+                    <div class="category-name">${supplier.name}</div>
+                    ${contactInfo.length > 0 ? `<div class="category-description">${contactInfo.join(' • ')}</div>` : ''}
+                    ${supplier.address ? `<div class="category-description" style="font-size: 12px; color: #94a3b8;">📍 ${supplier.address}</div>` : ''}
+                    <div class="category-count">${supplier.products_count || 0} producto(s)</div>
+                </div>
+                <div class="category-actions">
+                    <button class="btn-icon btn-icon-edit" onclick="editSupplier(${supplier.id})" title="Editar">
+                        ✏
+                    </button>
+                    <button class="btn-icon btn-icon-delete" onclick="deleteSupplier(${supplier.id}, ${supplier.products_count || 0})" title="Eliminar">
+                        🗑
+                    </button>
+                </div>
+            </div>
+        `;
+        }).join('');
+    } catch (error) {
+        listContainer.innerHTML = '<p style="color: #ef4444;">Error al cargar los proveedores</p>';
+    }
+}
+
+async function editSupplier(supplierId) {
+    try {
+        const response = await apiRequest(`/suppliers/${supplierId}`);
+        const supplier = response.data;
+        
+        if (!supplier) {
+            showNotification('Proveedor no encontrado', 'error');
+            return;
+        }
+        
+        document.getElementById('supplier-id').value = supplier.id;
+        document.getElementById('supplier-name').value = supplier.name;
+        document.getElementById('supplier-contact-name').value = supplier.contact_name || '';
+        document.getElementById('supplier-phone').value = supplier.phone || '';
+        document.getElementById('supplier-email').value = supplier.email || '';
+        document.getElementById('supplier-address').value = supplier.address || '';
+        document.getElementById('supplier-form-title').textContent = 'Editar Proveedor';
+        document.getElementById('save-supplier-btn').textContent = 'Guardar Cambios';
+        document.getElementById('cancel-supplier-btn').style.display = 'inline-block';
+        
+        // Scroll to form
+        document.getElementById('supplier-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (error) {
+        showNotification('Error al cargar el proveedor', 'error');
+    }
+}
+
+async function deleteSupplier(supplierId, productsCount) {
+    if (productsCount > 0) {
+        showNotification(`No se puede eliminar este proveedor porque tiene ${productsCount} producto(s) asociados`, 'error');
+        return;
+    }
+    
+    if (!confirm('¿Estás seguro de que deseas eliminar este proveedor?')) {
+        return;
+    }
+    
+    try {
+        await apiRequest(`/suppliers/${supplierId}`, {
+            method: 'DELETE'
+        });
+        showNotification('Proveedor eliminado exitosamente', 'success');
+        await loadSuppliersList();
+        await loadSuppliers(); // Refresh supplier dropdown
+    } catch (error) {
+        showNotification(error.message || 'Error al eliminar el proveedor', 'error');
+    }
+}
+
+// Handle supplier form submission
+document.addEventListener('DOMContentLoaded', () => {
+    const supplierForm = document.getElementById('supplier-form');
+    if (supplierForm) {
+        supplierForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const supplierId = document.getElementById('supplier-id').value;
+            const name = document.getElementById('supplier-name').value.trim();
+            const contact_name = document.getElementById('supplier-contact-name').value.trim();
+            const phone = document.getElementById('supplier-phone').value.trim();
+            const email = document.getElementById('supplier-email').value.trim();
+            const address = document.getElementById('supplier-address').value.trim();
+            
+            if (!name) {
+                showNotification('El nombre del proveedor es requerido', 'error');
+                return;
+            }
+            
+            try {
+                const url = supplierId ? `/suppliers/${supplierId}` : '/suppliers';
+                const method = supplierId ? 'PUT' : 'POST';
+                
+                await apiRequest(url, {
+                    method,
+                    body: JSON.stringify({ name, contact_name, phone, email, address, active: true })
+                });
+                
+                showNotification(
+                    supplierId ? 'Proveedor actualizado exitosamente' : 'Proveedor creado exitosamente',
+                    'success'
+                );
+                
+                resetSupplierForm();
+                await loadSuppliersList();
+                await loadSuppliers(); // Refresh supplier dropdown
+            } catch (error) {
+                showNotification(error.message || 'Error al guardar el proveedor', 'error');
+            }
+        });
+    }
+    
+    // Close supplier modal on click outside
+    const supplierModal = document.getElementById('supplier-modal');
+    if (supplierModal) {
+        supplierModal.addEventListener('click', (e) => {
+            if (e.target === supplierModal) {
+                closeSupplierModal();
+            }
+        });
+    }
+});
 
 async function loadProductCategories() {
     try {
@@ -1289,6 +1845,26 @@ async function loadProductCategories() {
         }
     } catch (error) {
         console.error('Error loading categories:', error);
+    }
+}
+
+async function loadSuppliers() {
+    try {
+        const response = await apiRequest('/suppliers');
+        const suppliers = response.data;
+        
+        const formSelect = document.getElementById('product-supplier');
+        if (formSelect) {
+            formSelect.innerHTML = '<option value="">Sin proveedor</option>';
+            suppliers.forEach(supplier => {
+                const option = document.createElement('option');
+                option.value = supplier.id;
+                option.textContent = supplier.name;
+                formSelect.appendChild(option);
+            });
+        }
+    } catch (error) {
+        console.error('Error loading suppliers:', error);
     }
 }
 
@@ -1342,6 +1918,9 @@ async function editProduct(productId) {
         document.querySelector('#product-form input[name="name"]').value = product.name;
         document.querySelector('#product-form textarea[name="description"]').value = product.description || '';
         document.querySelector('#product-form select[name="category_id"]').value = product.category_id || '';
+        document.getElementById('product-brand').value = product.brand || '';
+        document.getElementById('product-location').value = product.location || '';
+        document.getElementById('product-supplier').value = product.supplier_id || '';
 
         // Show presentations section
         document.getElementById('presentations-section').style.display = 'block';
@@ -1364,8 +1943,9 @@ function renderPresentations(presentations) {
             <thead>
                 <tr>
                     <th>Nombre</th>
-                    <th>Precio (sin IVA)</th>
-                    <th>Precio (con IVA)</th>
+                    <th>Precio Compra</th>
+                    <th>Precio Venta</th>
+                    <th>Precio c/IVA</th>
                     <th>Unidades</th>
                     <th>Acciones</th>
                 </tr>
@@ -1374,11 +1954,12 @@ function renderPresentations(presentations) {
                 ${presentations.map(p => `
                     <tr>
                         <td>${p.name}</td>
-                        <td>Q ${formatNumber(p.price)}</td>
-                        <td>Q ${formatNumber(p.price * 1.12)}</td>
+                        <td>Q ${formatNumber(p.purchase_price)}</td>
+                        <td>Q ${formatNumber(p.sale_price)}</td>
+                        <td>Q ${formatNumber(p.sale_price * 1.12)}</td>
                         <td>${p.factor || 1}</td>
                         <td>
-                            <button class="btn btn-sm btn-primary" onclick="editPresentation(${p.id}, '${p.name}', ${p.price}, ${p.factor || 1})" style="margin-right: 5px;">Editar</button>
+                            <button class="btn btn-sm btn-primary" onclick="editPresentation(${p.id}, '${p.name}', ${p.purchase_price}, ${p.sale_price}, ${p.factor || 1})" style="margin-right: 5px;">Editar</button>
                             <button class="btn btn-sm btn-danger" onclick="deletePresentation(${p.id})">Eliminar</button>
                         </td>
                     </tr>
@@ -1388,7 +1969,7 @@ function renderPresentations(presentations) {
     `;
 }
 
-function editPresentation(presentationId, name, price, factor) {
+function editPresentation(presentationId, name, purchasePrice, salePrice, factor) {
     currentEditingPresentationId = presentationId;
     
     // Update form title and button
@@ -1399,7 +1980,8 @@ function editPresentation(presentationId, name, price, factor) {
     // Fill form
     document.getElementById('presentation-id').value = presentationId;
     document.getElementById('presentation-name').value = name;
-    document.getElementById('presentation-price').value = price;
+    document.getElementById('presentation-purchase-price').value = purchasePrice;
+    document.getElementById('presentation-sale-price').value = salePrice;
     document.getElementById('presentation-factor').value = factor;
     
     // Scroll to form
@@ -1447,3 +2029,353 @@ if (document.getElementById('catalog-search')) {
         }, 500);
     });
 }
+
+// ==================== INVENTORY IMPORT ====================
+
+let currentImportId = null;
+
+function openImportModal() {
+    document.getElementById('import-modal').style.display = 'flex';
+    resetImport();
+}
+
+function closeImportModal() {
+    document.getElementById('import-modal').style.display = 'none';
+    resetImport();
+}
+
+function resetImport() {
+    currentImportId = null;
+    document.getElementById('upload-section').style.display = 'block';
+    document.getElementById('preview-section').style.display = 'none';
+    document.getElementById('import-loading').style.display = 'none';
+    document.getElementById('import-file-input').value = '';
+    document.getElementById('import-source-name').value = '';
+}
+
+// Handle file selection
+document.getElementById('import-file-input')?.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.json')) {
+        showNotification('Por favor selecciona un archivo JSON válido', 'error');
+        return;
+    }
+
+    // Show loading
+    document.getElementById('upload-section').style.display = 'none';
+    document.getElementById('import-loading').style.display = 'block';
+
+    try {
+        // Read file to detect format
+        const fileText = await file.text();
+        const jsonData = JSON.parse(fileText);
+        
+        // Detect if it's category-based format
+        const isCategoryFormat = jsonData.hasOwnProperty('categoria') && jsonData.hasOwnProperty('items');
+        const isMultiCategoryFormat = Array.isArray(jsonData) && jsonData.length > 0 && jsonData[0].hasOwnProperty('categoria');
+        
+        // Choose appropriate endpoint
+        const endpoint = (isCategoryFormat || isMultiCategoryFormat) 
+            ? '/api/inventory/import/preview-category'
+            : '/api/inventory/import/preview';
+        
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+            },
+            body: formData
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.message || 'Error al procesar el archivo');
+        }
+
+        // Show preview
+        showImportPreview(result.data);
+    } catch (error) {
+        showNotification(error.message, 'error');
+        resetImport();
+    }
+});
+
+function showImportPreview(previewData) {
+    document.getElementById('import-loading').style.display = 'none';
+    document.getElementById('preview-section').style.display = 'block';
+
+    currentImportId = previewData.import_id;
+
+    // Build stats HTML
+    const statsHTML = `
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 16px;">
+            <div style="background: white; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                <div style="font-size: 24px; font-weight: bold; color: #10b981;">${previewData.total_products}</div>
+                <div style="font-size: 13px; color: #64748b;">Total Productos</div>
+            </div>
+            <div style="background: white; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                <div style="font-size: 24px; font-weight: bold; color: #3b82f6;">${previewData.new_products}</div>
+                <div style="font-size: 13px; color: #64748b;">Nuevos</div>
+            </div>
+            <div style="background: white; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                <div style="font-size: 24px; font-weight: bold; color: #f59e0b;">${previewData.existing_products}</div>
+                <div style="font-size: 13px; color: #64748b;">Existentes (se actualizarán)</div>
+            </div>
+            <div style="background: white; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                <div style="font-size: 24px; font-weight: bold; color: #8b5cf6;">${previewData.total_presentations}</div>
+                <div style="font-size: 13px; color: #64748b;">Presentaciones</div>
+            </div>
+            <div style="background: white; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                <div style="font-size: 24px; font-weight: bold; color: #06b6d4;">${previewData.total_stock_batches}</div>
+                <div style="font-size: 13px; color: #64748b;">Lotes de Stock</div>
+            </div>
+        </div>
+    `;
+
+    document.getElementById('preview-stats').innerHTML = statsHTML;
+
+    // Show errors
+    if (previewData.errors && previewData.errors.length > 0) {
+        const errorsHTML = previewData.errors.map(error => `<li style="color: #dc2626;">${error}</li>`).join('');
+        document.getElementById('preview-warnings').style.display = 'block';
+        document.getElementById('preview-warnings').innerHTML = `
+            <h4 style="color: #dc2626; margin-bottom: 8px;">❌ Errores</h4>
+            <ul style="margin: 0; padding-left: 20px;">${errorsHTML}</ul>
+        `;
+        document.getElementById('commit-import-btn').disabled = true;
+        document.getElementById('commit-import-btn').style.opacity = '0.5';
+        return;
+    }
+
+    // Show warnings
+    if (previewData.warnings && previewData.warnings.length > 0) {
+        const warningsHTML = previewData.warnings.map(warning => `<li>${warning}</li>`).join('');
+        document.getElementById('preview-warnings').style.display = 'block';
+        document.getElementById('preview-warnings-list').innerHTML = warningsHTML;
+    } else {
+        document.getElementById('preview-warnings').style.display = 'none';
+    }
+
+    // Enable commit button
+    document.getElementById('commit-import-btn').disabled = false;
+    document.getElementById('commit-import-btn').style.opacity = '1';
+}
+
+async function commitImport() {
+    if (!currentImportId) {
+        showNotification('No hay importación pendiente', 'error');
+        return;
+    }
+
+    if (!confirm('¿Estás seguro de que deseas importar estos productos? Esta acción no se puede deshacer.')) {
+        return;
+    }
+
+    // Show loading
+    document.getElementById('preview-section').style.display = 'none';
+    document.getElementById('import-loading').style.display = 'block';
+    document.getElementById('import-loading').querySelector('p').textContent = 'Importando productos...';
+
+    // Get source name from input
+    const sourceName = document.getElementById('import-source-name').value.trim();
+
+    try {
+        const response = await apiRequest('/inventory/import/commit', {
+            method: 'POST',
+            body: JSON.stringify({ 
+                import_id: currentImportId,
+                source_name: sourceName || null,
+                source_type: 'json'
+            })
+        });
+
+        showNotification(
+            `Importación completada: ${response.data.summary.products_created} creados, ${response.data.summary.products_updated} actualizados`,
+            'success'
+        );
+
+        closeImportModal();
+        
+        // Reload catalog
+        if (typeof loadProductCatalog === 'function') {
+            loadProductCatalog(1);
+        }
+        
+        // Reload categories and suppliers if new ones were created
+        if (response.data.summary.categories_created > 0) {
+            await loadProductCategories();
+        }
+        if (response.data.summary.suppliers_created > 0) {
+            await loadSuppliers();
+        }
+    } catch (error) {
+        showNotification(error.message || 'Error al importar', 'error');
+        resetImport();
+    }
+}
+
+// Close import modal on click outside
+document.getElementById('import-modal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'import-modal') {
+        closeImportModal();
+    }
+});
+
+// Format example switcher
+function showFormatExample(format) {
+    // Hide all examples
+    document.getElementById('format-example-standard').style.display = 'none';
+    document.getElementById('format-example-category').style.display = 'none';
+    
+    // Reset all buttons
+    document.getElementById('btn-format-standard').style.borderBottom = '2px solid transparent';
+    document.getElementById('btn-format-standard').style.color = '#64748b';
+    document.getElementById('btn-format-standard').style.fontWeight = 'normal';
+    document.getElementById('btn-format-category').style.borderBottom = '2px solid transparent';
+    document.getElementById('btn-format-category').style.color = '#64748b';
+    document.getElementById('btn-format-category').style.fontWeight = 'normal';
+    
+    // Show selected example
+    if (format === 'standard') {
+        document.getElementById('format-example-standard').style.display = 'block';
+        document.getElementById('btn-format-standard').style.borderBottom = '2px solid #3b82f6';
+        document.getElementById('btn-format-standard').style.color = '#3b82f6';
+        document.getElementById('btn-format-standard').style.fontWeight = '600';
+    } else if (format === 'category') {
+        document.getElementById('format-example-category').style.display = 'block';
+        document.getElementById('btn-format-category').style.borderBottom = '2px solid #3b82f6';
+        document.getElementById('btn-format-category').style.color = '#3b82f6';
+        document.getElementById('btn-format-category').style.fontWeight = '600';
+    }
+}
+// ==================== IMPORT HISTORY ====================
+
+let currentHistoryPage = 1;
+
+async function openImportHistoryModal() {
+    document.getElementById('import-history-modal').style.display = 'flex';
+    currentHistoryPage = 1;
+    await loadImportHistory();
+}
+
+function closeImportHistoryModal() {
+    document.getElementById('import-history-modal').style.display = 'none';
+}
+
+async function loadImportHistory(page) {
+    if (!page) page = 1;
+    
+    document.getElementById('import-history-loading').style.display = 'block';
+    document.getElementById('import-history-content').style.display = 'none';
+
+    try {
+        const response = await apiRequest('/inventory/import/history?page=' + page);
+        
+        const tbody = document.getElementById('import-history-tbody');
+        tbody.innerHTML = '';
+
+        if (response.data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 40px; color: #94a3b8;">No hay historial de importaciones</td></tr>';
+        } else {
+            for (let i = 0; i < response.data.length; i++) {
+                const item = response.data[i];
+                const row = document.createElement('tr');
+                
+                const date = new Date(item.imported_at);
+                const formattedDate = date.toLocaleDateString('es-GT', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+
+                const typeColors = {
+                    'json': '#3b82f6',
+                    'excel': '#10b981',
+                    'manual': '#8b5cf6'
+                };
+                
+                const typeColor = typeColors[item.source_type] || '#64748b';
+                const typeText = item.source_type ? item.source_type.toUpperCase() : 'DESCONOCIDO';
+                
+                let productsUpdatedHTML = '';
+                if (item.total_products_updated > 0) {
+                    productsUpdatedHTML = ' <span style="color: #f59e0b; font-weight: 600;">~' + item.total_products_updated + '</span>';
+                }
+                
+                let categoriesHTML = '-';
+                if (item.total_categories_created > 0) {
+                    categoriesHTML = '<span style="color: #8b5cf6;">+' + item.total_categories_created + '</span>';
+                }
+                
+                const userName = item.user ? item.user.name : 'N/A';
+
+                row.innerHTML = '<td>' + formattedDate + '</td>' +
+                    '<td><strong>' + item.source_name + '</strong></td>' +
+                    '<td><span style="background: ' + typeColor + '; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px;">' + typeText + '</span></td>' +
+                    '<td><span style="color: #10b981; font-weight: 600;">+' + item.total_products_created + '</span>' + productsUpdatedHTML + '</td>' +
+                    '<td>' + categoriesHTML + '</td>' +
+                    '<td>' + userName + '</td>';
+                
+                tbody.appendChild(row);
+            }
+        }
+
+        const pagination = document.getElementById('import-history-pagination');
+        pagination.innerHTML = '';
+        
+        if (response.last_page > 1) {
+            if (response.current_page > 1) {
+                const prevBtn = document.createElement('button');
+                prevBtn.textContent = '← Anterior';
+                prevBtn.className = 'btn btn-secondary';
+                prevBtn.style.marginRight = '8px';
+                const prevPage = response.current_page - 1;
+                prevBtn.onclick = function() { 
+                    loadImportHistory(prevPage);
+                };
+                pagination.appendChild(prevBtn);
+            }
+            
+            const pageInfo = document.createElement('span');
+            pageInfo.textContent = 'Página ' + response.current_page + ' de ' + response.last_page;
+            pageInfo.style.margin = '0 16px';
+            pagination.appendChild(pageInfo);
+            
+            if (response.current_page < response.last_page) {
+                const nextBtn = document.createElement('button');
+                nextBtn.textContent = 'Siguiente →';
+                nextBtn.className = 'btn btn-secondary';
+                nextBtn.style.marginLeft = '8px';
+                const nextPage = response.current_page + 1;
+                nextBtn.onclick = function() { 
+                    loadImportHistory(nextPage);
+                };
+                pagination.appendChild(nextBtn);
+            }
+        }
+
+        document.getElementById('import-history-loading').style.display = 'none';
+        document.getElementById('import-history-content').style.display = 'block';
+
+    } catch (error) {
+        showNotification('Error al cargar historial: ' + error.message, 'error');
+        document.getElementById('import-history-loading').style.display = 'none';
+    }
+}
+
+if (document.getElementById('import-history-modal')) {
+    document.getElementById('import-history-modal').addEventListener('click', function(e) {
+        if (e.target.id === 'import-history-modal') {
+            closeImportHistoryModal();
+        }
+    });
+}
+

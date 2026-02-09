@@ -52,9 +52,10 @@ class ProductController extends Controller
                         return [
                             'id' => $presentation->id,
                             'name' => $presentation->name,
-                            'price' => $presentation->price,
-                            'price_with_iva' => round($presentation->price * 1.12, 2),
-                            'units_per_presentation' => $presentation->units_per_presentation,
+                            'purchase_price' => $presentation->purchase_price,
+                            'sale_price' => $presentation->sale_price,
+                            'price_with_iva' => round($presentation->sale_price * 1.12, 2),
+                            'factor' => $presentation->factor,
                         ];
                     }),
                 ];
@@ -84,8 +85,9 @@ class ProductController extends Controller
                 'product_id' => $presentation->product_id,
                 'product_name' => $presentation->product->name,
                 'name' => $presentation->name,
-                'price' => $presentation->price,
-                'units_per_presentation' => $presentation->units_per_presentation,
+                'purchase_price' => $presentation->purchase_price,
+                'sale_price' => $presentation->sale_price,
+                'factor' => $presentation->factor,
             ],
         ]);
     }
@@ -131,7 +133,7 @@ class ProductController extends Controller
                 $locations = $product->stockBatches->pluck('location')->filter()->unique()->values();
                 
                 // Get base price from first presentation
-                $basePrice = $product->presentations->first()->price ?? 0;
+                $basePrice = $product->presentations->first()->sale_price ?? 0;
                 $priceWithIva = $basePrice * 1.12;
 
                 return [
@@ -141,6 +143,8 @@ class ProductController extends Controller
                     'barcode' => $product->barcode,
                     'category_id' => $product->category_id,
                     'category_name' => $product->category ? $product->category->name : 'Sin categoría',
+                    'brand' => $product->brand,
+                    'location' => $product->location,
                     'base_price' => round($basePrice, 2),
                     'price_with_iva' => round($priceWithIva, 2),
                     'total_stock' => $totalStock,
@@ -149,9 +153,10 @@ class ProductController extends Controller
                         return [
                             'id' => $presentation->id,
                             'name' => $presentation->name,
-                            'price' => $presentation->price,
-                            'price_with_iva' => round($presentation->price * 1.12, 2),
-                            'units_per_presentation' => $presentation->units_per_presentation,
+                            'purchase_price' => $presentation->purchase_price,
+                            'sale_price' => $presentation->sale_price,
+                            'price_with_iva' => round($presentation->sale_price * 1.12, 2),
+                            'factor' => $presentation->factor,
                         ];
                     }),
                 ];
@@ -204,11 +209,15 @@ class ProductController extends Controller
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
             'category_id' => 'nullable|exists:categories,id',
+            'brand' => 'nullable|string|max:255',
+            'location' => 'nullable|string|max:255',
+            'supplier_id' => 'nullable|exists:suppliers,id',
         ], [
             'barcode.required' => 'El código de barras es obligatorio.',
             'barcode.unique' => 'Este código de barras ya existe.',
             'name.required' => 'El nombre del producto es obligatorio.',
             'category_id.exists' => 'La categoría seleccionada no existe.',
+            'supplier_id.exists' => 'El proveedor seleccionado no existe.',
         ]);
 
         $product = Product::create($validated);
@@ -231,7 +240,7 @@ class ProductController extends Controller
             ], 403);
         }
 
-        $product = Product::with(['presentations', 'category'])
+        $product = Product::with(['presentations', 'category', 'supplier'])
             ->findOrFail($productId);
 
         return response()->json([
@@ -243,12 +252,17 @@ class ProductController extends Controller
                 'description' => $product->description,
                 'category_id' => $product->category_id,
                 'category_name' => $product->category ? $product->category->name : null,
+                'brand' => $product->brand,
+                'location' => $product->location,
+                'supplier_id' => $product->supplier_id,
+                'supplier_name' => $product->supplier ? $product->supplier->name : null,
                 'active' => $product->active,
                 'presentations' => $product->presentations->map(function ($p) {
                     return [
                         'id' => $p->id,
                         'name' => $p->name,
-                        'price' => $p->price,
+                        'purchase_price' => $p->purchase_price,
+                        'sale_price' => $p->sale_price,
                         'factor' => $p->factor,
                     ];
                 }),
@@ -275,11 +289,15 @@ class ProductController extends Controller
             'name' => 'sometimes|required|string|max:255',
             'description' => 'nullable|string',
             'category_id' => 'nullable|exists:categories,id',
+            'brand' => 'nullable|string|max:255',
+            'location' => 'nullable|string|max:255',
+            'supplier_id' => 'nullable|exists:suppliers,id',
             'active' => 'sometimes|boolean',
         ], [
             'barcode.unique' => 'Este código de barras ya existe.',
             'name.required' => 'El nombre del producto es obligatorio.',
             'category_id.exists' => 'La categoría seleccionada no existe.',
+            'supplier_id.exists' => 'El proveedor seleccionado no existe.',
         ]);
 
         $product->update($validated);
@@ -306,12 +324,15 @@ class ProductController extends Controller
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'price' => 'required|numeric|min:0',
+            'purchase_price' => 'required|numeric|min:0',
+            'sale_price' => 'required|numeric|min:0',
             'factor' => 'required|integer|min:1',
         ], [
             'name.required' => 'El nombre de la presentación es obligatorio.',
-            'price.required' => 'El precio es obligatorio.',
-            'price.min' => 'El precio debe ser mayor o igual a 0.',
+            'purchase_price.required' => 'El precio de compra es obligatorio.',
+            'purchase_price.min' => 'El precio de compra debe ser mayor o igual a 0.',
+            'sale_price.required' => 'El precio de venta es obligatorio.',
+            'sale_price.min' => 'El precio de venta debe ser mayor o igual a 0.',
             'factor.required' => 'Las unidades por presentación son obligatorias.',
             'factor.min' => 'Debe haber al menos 1 unidad por presentación.',
         ]);
@@ -340,13 +361,14 @@ class ProductController extends Controller
 
         $validated = $request->validate([
             'name' => 'sometimes|required|string|max:255',
-            'price' => 'sometimes|required|numeric|min:0',
+            'purchase_price' => 'sometimes|required|numeric|min:0',
+            'sale_price' => 'sometimes|required|numeric|min:0',
             'factor' => 'sometimes|required|integer|min:1',
-            'factor' => 'sometimes|integer|min:1',
         ], [
             'name.required' => 'El nombre de la presentación es obligatorio.',
-            'price.min' => 'El precio debe ser mayor o igual a 0.',
-            'units_per_presentation.min' => 'Debe haber al menos 1 unidad por presentación.',
+            'purchase_price.min' => 'El precio de compra debe ser mayor o igual a 0.',
+            'sale_price.min' => 'El precio de venta debe ser mayor o igual a 0.',
+            'factor.min' => 'Debe haber al menos 1 unidad por presentación.',
         ]);
 
         $presentation->update($validated);

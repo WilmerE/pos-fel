@@ -15,10 +15,12 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // Seed roles and permissions first
+        // Seed in correct order to respect foreign key constraints
         $this->call([
             RolesAndPermissionsSeeder::class,
             UserSeeder::class,
+            CategorySeeder::class,     // Categories must be created before products
+            SupplierSeeder::class,     // Suppliers must be created before products
             ProductSeeder::class,
             StockSeeder::class,
         ]);

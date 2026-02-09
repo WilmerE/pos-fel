@@ -16,6 +16,7 @@ class StockService
      * Add stock to a new or existing batch
      *
      * @param int $productId
+     * @param int $presentationId
      * @param string $batchNumber
      * @param string|null $expirationDate
      * @param int $quantity
@@ -26,6 +27,7 @@ class StockService
      */
     public function addStock(
         int $productId,
+        int $presentationId,
         string $batchNumber,
         ?string $expirationDate,
         int $quantity,
@@ -34,6 +36,7 @@ class StockService
     ): StockBatch {
         return DB::transaction(function () use (
             $productId,
+            $presentationId,
             $batchNumber,
             $expirationDate,
             $quantity,
@@ -64,6 +67,7 @@ class StockService
             } else {
                 // Create new batch
                 $stockBatch->fill([
+                    'presentation_id' => $presentationId,
                     'expiration_date' => $expirationDate,
                     'quantity_initial' => $quantity,
                     'quantity_available' => $quantity,

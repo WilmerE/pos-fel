@@ -2,11 +2,14 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CashBoxController;
+use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\FiscalController;
+use App\Http\Controllers\Api\InventoryImportController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\SaleController;
 use App\Http\Controllers\Api\StockController;
+use App\Http\Controllers\Api\SupplierController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -51,6 +54,32 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/presentations/{presentationId}', [ProductController::class, 'updatePresentation']);
         Route::delete('/presentations/{presentationId}', [ProductController::class, 'deletePresentation']);
         Route::get('/presentations/{presentationId}', [ProductController::class, 'getPresentation']);
+    });
+
+    // Categories
+    Route::prefix('categories')->group(function () {
+        Route::get('/', [CategoryController::class, 'index']);
+        Route::post('/', [CategoryController::class, 'store']);
+        Route::put('/{categoryId}', [CategoryController::class, 'update']);
+        Route::delete('/{categoryId}', [CategoryController::class, 'destroy']);
+    });
+
+    // Suppliers
+    Route::prefix('suppliers')->group(function () {
+        Route::get('/', [SupplierController::class, 'index']);
+        Route::post('/', [SupplierController::class, 'store']);
+        Route::get('/{supplierId}', [SupplierController::class, 'show']);
+        Route::put('/{supplierId}', [SupplierController::class, 'update']);
+        Route::delete('/{supplierId}', [SupplierController::class, 'destroy']);
+    });
+
+    // Inventory Import
+    Route::prefix('inventory/import')->group(function () {
+        Route::get('/history', [InventoryImportController::class, 'history']);
+        Route::post('/preview', [InventoryImportController::class, 'preview']);
+        Route::post('/preview-json', [InventoryImportController::class, 'previewJson']);
+        Route::post('/preview-category', [InventoryImportController::class, 'previewCategory']);
+        Route::post('/commit', [InventoryImportController::class, 'commit']);
     });
 
     // Stock

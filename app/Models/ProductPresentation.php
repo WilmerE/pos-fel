@@ -14,12 +14,14 @@ class ProductPresentation extends Model
         'product_id',
         'name',
         'factor',
-        'price',
+        'purchase_price',
+        'sale_price',
     ];
 
     protected $casts = [
         'factor' => 'integer',
-        'price' => 'decimal:2',
+        'purchase_price' => 'decimal:2',
+        'sale_price' => 'decimal:2',
     ];
 
     public function product(): BelongsTo

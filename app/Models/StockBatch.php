@@ -13,6 +13,7 @@ class StockBatch extends Model
 
     protected $fillable = [
         'product_id',
+        'presentation_id',
         'batch_number',
         'expiration_date',
         'quantity_initial',
@@ -29,6 +30,11 @@ class StockBatch extends Model
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class);
+    }
+
+    public function presentation(): BelongsTo
+    {
+        return $this->belongsTo(ProductPresentation::class, 'presentation_id');
     }
 
     public function movements(): HasMany
