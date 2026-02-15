@@ -39,6 +39,15 @@ class SaleService
         ?string $customerNit = null
     ): Sale
     {
+        // Validate that there is an open cash box
+        $openCashBox = $this->cashBoxService->getOpenCashBox();
+        
+        if (!$openCashBox) {
+            throw new Exception(
+                "⚠️ No hay una caja abierta. Debe abrir una caja antes de realizar ventas."
+            );
+        }
+
         return Sale::create([
             'user_id' => $userId,
             'cashier_id' => $cashierId ?? $userId,
@@ -115,14 +124,17 @@ class SaleService
                 );
             }
 
+            // Validate that the product is not expired
+            $this->validateProductNotExpired($productId, $product->name);
+
             // Create sale item
             $saleItem = SaleItem::create([
                 'sale_id' => $saleId,
                 'product_id' => $productId,
                 'presentation_id' => $presentationId,
                 'quantity' => $quantity,
-                'unit_price' => $presentation->price,
-                'total' => $quantity * $presentation->price,
+                'unit_price' => $presentation->sale_price,
+                'total' => $quantity * $presentation->sale_price,
             ]);
 
             // Recalculate sale totals
@@ -355,5 +367,27 @@ class SaleService
         $sale = Sale::findOrFail($saleId);
         $sale->calculateTotals($taxRate);
         return $sale->fresh();
+    }
+
+    /**
+     * Validate that the product is not expired
+     * 
+     * @param int $productId
+     * @param string $productName
+     * @throws Exception
+     */
+    protected function validateProductNotExpired(int $productId, string $productName): void
+    {
+        $expiredBatches = \App\Models\StockBatch::where('product_id', $productId)
+            ->whereNotNull('expiration_date')
+            ->where('expiration_date', '<', now())
+            ->where('quantity_available', '>', 0)
+            ->count();
+
+        if ($expiredBatches > 0) {
+            throw new Exception(
+                "⚠️ El producto '{$productName}' tiene lotes vencidos. No se puede vender producto vencido. Por favor revise el inventario."
+            );
+        }
     }
 }

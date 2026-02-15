@@ -280,4 +280,92 @@ class SaleController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Get all sales with filters
+     * Permission: view_sales
+     */
+    public function index(Request $request): JsonResponse
+    {
+        if (!$request->user()->hasPermission('view_sales')) {
+            return response()->json([
+                'message' => 'No tienes permiso para ver ventas.',
+            ], 403);
+        }
+
+        try {
+            $year = $request->input('year', date('Y'));
+            $month = $request->input('month'); // null = all months
+            $status = $request->input('status'); // null = all statuses
+
+            $sales = \App\Models\Sale::with(['cashier', 'items.product'])
+                ->whereYear('created_at', $year);
+
+            if ($month) {
+                $sales->whereMonth('created_at', $month);
+            }
+
+            if ($status) {
+                $sales->where('status', $status);
+            }
+
+            $sales = $sales->orderBy('created_at', 'desc')->get();
+
+            return response()->json([
+                'message' => 'Ventas obtenidas exitosamente.',
+                'data' => $sales,
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'message' => 'Error al obtener ventas.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Get sales from current open cash box
+     * Permission: view_sales
+     */
+    public function currentCashBox(Request $request): JsonResponse
+    {
+        if (!$request->user()->hasPermission('view_sales')) {
+            return response()->json([
+                'message' => 'No tienes permiso para ver ventas.',
+            ], 403);
+        }
+
+        try {
+            $openCashBox = \App\Models\CashBox::where('status', 'open')->first();
+
+            if (!$openCashBox) {
+                return response()->json([
+                    'message' => 'No hay caja abierta.',
+                    'data' => [],
+                ]);
+            }
+
+            // Get all sales created after cash box opening
+            $sales = \App\Models\Sale::with(['cashier', 'items.product'])
+                ->where('created_at', '>=', $openCashBox->opened_at)
+                ->where('status', '!=', Sale::STATUS_PENDING)
+                ->orderBy('created_at', 'desc')
+                ->get();
+
+            return response()->json([
+                'message' => 'Ventas de la caja actual obtenidas exitosamente.',
+                'data' => $sales,
+                'cash_box' => [
+                    'id' => $openCashBox->id,
+                    'opened_at' => $openCashBox->opened_at,
+                    'initial_amount' => $openCashBox->initial_amount,
+                ],
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'message' => 'Error al obtener ventas de la caja actual.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
 }

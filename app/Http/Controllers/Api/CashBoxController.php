@@ -331,14 +331,59 @@ class CashBoxController extends Controller
         }
 
         try {
-            $filters = [
-                'status' => $request->query('status'),
-                'opened_by' => $request->query('opened_by'),
-                'date_from' => $request->query('date_from'),
-                'date_to' => $request->query('date_to'),
-            ];
-
-            $cashBoxes = $this->cashBoxService->getCashBoxes(array_filter($filters));
+            $year = $request->query('year');
+            $month = $request->query('month');
+            
+            $query = \App\Models\CashBox::with(['openedBy', 'closedBy']);
+            
+            // Filter by year
+            if ($year) {
+                $query->whereYear('opened_at', $year);
+            }
+            
+            // Filter by month
+            if ($month) {
+                $query->whereMonth('opened_at', $month);
+            }
+            
+            // Additional filters
+            if ($request->query('status')) {
+                $query->where('status', $request->query('status'));
+            }
+            
+            $cashBoxes = $query->orderBy('opened_at', 'desc')->get()
+                ->map(function($box) {
+                    // Calculate total sales for this cash box (for display only)
+                    $totalSales = 0;
+                    if ($box->isClosed()) {
+                        $totalSales = \App\Models\Sale::where('created_at', '>=', $box->opened_at)
+                            ->where('created_at', '<=', $box->closed_at)
+                            ->where('status', 'completed')
+                            ->sum('total');
+                    } elseif ($box->isOpen()) {
+                        $totalSales = \App\Models\Sale::where('created_at', '>=', $box->opened_at)
+                            ->where('status', 'completed')
+                            ->sum('total');
+                    }
+                    
+                    // Use the model's calculation methods (sales are already included in income movements)
+                    $expectedClosing = $box->calculateExpectedClosing();
+                    $difference = $box->calculateDifference();
+                    
+                    return [
+                        'id' => $box->id,
+                        'opened_at' => $box->opened_at,
+                        'closed_at' => $box->closed_at,
+                        'status' => $box->isClosed() ? 'closed' : 'open',
+                        'initial_amount' => $box->opening_amount,
+                        'final_cash' => $box->closing_amount,
+                        'expected_closing' => $expectedClosing,
+                        'total_sales' => $totalSales,
+                        'difference' => $difference,
+                        'opened_by' => $box->openedBy,
+                        'closed_by' => $box->closedBy,
+                    ];
+                });
 
             return response()->json([
                 'message' => 'Cajas obtenidas exitosamente.',

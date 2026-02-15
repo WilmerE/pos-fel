@@ -488,6 +488,22 @@ body {
     color: #6b7280;
 }
 
+.badge-success {
+    background: #f0fdf4;
+    color: #15803d;
+}
+
+.badge-warning {
+    background: #fef5e7;
+    color: #d97706;
+}
+
+.badge-danger {
+    background: #fef2f2;
+    color: #dc2626;
+    font-weight: 600;
+}
+
 /* Sale Info */
 .sale-header {
     display: flex;
@@ -1129,4 +1145,280 @@ body {
 
 .modal-body {
     padding: 24px;
+}
+
+/* Notifications Styles */
+.notifications-badge {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    background: #ef4444;
+    color: white;
+    font-size: 11px;
+    font-weight: bold;
+    padding: 2px 6px;
+    border-radius: 10px;
+    min-width: 18px;
+    text-align: center;
+}
+
+.notifications-panel {
+    position: fixed;
+    top: 60px;
+    right: 20px;
+    width: 420px;
+    max-height: 600px;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+    z-index: 1000;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.notifications-header {
+    padding: 16px 20px;
+    border-bottom: 2px solid #e2e8f0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #f8fafc;
+}
+
+.notifications-header h3 {
+    margin: 0;
+    font-size: 16px;
+    color: #1e293b;
+}
+
+.notifications-header .btn-close {
+    background: none;
+    border: none;
+    font-size: 28px;
+    color: #94a3b8;
+    cursor: pointer;
+    padding: 0;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+.notifications-header .btn-close:hover {
+    background: #e2e8f0;
+    color: #475569;
+}
+
+.notifications-content {
+    padding: 12px;
+    overflow-y: auto;
+    max-height: 540px;
+}
+
+.notification-item {
+    padding: 12px;
+    margin-bottom: 8px;
+    border-radius: 8px;
+    border-left: 4px solid;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.notification-item:hover {
+    transform: translateX(-2px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.notification-item.expired {
+    background: #fef2f2;
+    border-color: #ef4444;
+}
+
+.notification-item.critical {
+    background: #fff7ed;
+    border-color: #f97316;
+}
+
+.notification-item.warning {
+    background: #fffbeb;
+    border-color: #f59e0b;
+}
+
+.notification-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: start;
+    margin-bottom: 6px;
+}
+
+.notification-item-title {
+    font-weight: 600;
+    font-size: 14px;
+    color: #1e293b;
+}
+
+.notification-item-badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.notification-item-badge.expired {
+    background: #ef4444;
+    color: white;
+}
+
+.notification-item-badge.critical {
+    background: #f97316;
+    color: white;
+}
+
+.notification-item-badge.warning {
+    background: #f59e0b;
+    color: white;
+}
+
+.notification-item-details {
+    font-size: 12px;
+    color: #64748b;
+    line-height: 1.5;
+}
+
+.notification-item-location {
+    margin-top: 4px;
+    font-size: 11px;
+    color: #94a3b8;
+}
+
+.expiration-alert-card {
+    padding: 16px;
+    border-radius: 8px;
+    border-left: 4px solid;
+    margin-bottom: 12px;
+}
+
+.expiration-alert-card.has-expired {
+    background: #fef2f2;
+    border-color: #ef4444;
+}
+
+.expiration-alert-card.expiring-soon {
+    background: #fffbeb;
+    border-color: #f59e0b;
+}
+
+.expiration-alert-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.expiration-alert-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #1e293b;
+}
+
+.expiration-alert-count {
+    font-size: 20px;
+    font-weight: bold;
+}
+
+.expiration-alert-card.has-expired .expiration-alert-count {
+    color: #ef4444;
+}
+
+.expiration-alert-card.expiring-soon .expiration-alert-count {
+    color: #f59e0b;
+}
+
+/* Search Input with Clear Button */
+.search-input-wrapper {
+    position: relative;
+    width: 100%;
+}
+
+.search-input-wrapper input {
+    width: 100%;
+    padding-right: 32px !important; /* Space for the clear button */
+}
+
+.search-clear-btn {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 20px;
+    height: 20px;
+    border: none;
+    background: #cbd5e0;
+    color: #64748b;
+    border-radius: 50%;
+    cursor: pointer;
+    display: none; /* Hidden by default */
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 0;
+    transition: all 0.15s ease;
+    padding: 0;
+    outline: none;
+}
+
+.search-clear-btn:hover {
+    background: #94a3b8;
+    color: white;
+    transform: translateY(-50%) scale(1.15);
+}
+
+.search-clear-btn:active {
+    transform: translateY(-50%) scale(0.9);
+    background: #64748b;
+}
+
+.search-input-wrapper.has-value .search-clear-btn {
+    display: flex;
+}
+
+/* Month Filters */
+.month-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 5px;
+}
+
+.month-btn {
+    padding: 8px 16px;
+    border: 1px solid #cbd5e0;
+    background: white;
+    color: #475569;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.month-btn:hover {
+    background: #f1f5f9;
+    border-color: #94a3b8;
+}
+
+.month-btn.active {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    color: white;
+}
+
+.month-btn:active {
+    transform: scale(0.95);
 }

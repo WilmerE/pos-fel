@@ -310,7 +310,8 @@ class StockService
      */
     public function getStockBatchesFIFO(int $productId)
     {
-        return StockBatch::where('product_id', $productId)
+        return StockBatch::with('presentation')
+            ->where('product_id', $productId)
             ->where('quantity_available', '>', 0)
             ->orderBy('expiration_date', 'asc')
             ->orderBy('created_at', 'asc')

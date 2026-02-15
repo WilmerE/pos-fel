@@ -205,6 +205,9 @@ function initApp() {
     loadProductCategories();
     loadSuppliers();
     
+    // Setup search clear buttons
+    setupSearchClearButtons();
+    
     loadModuleData('dashboard');
 }
 
@@ -215,7 +218,7 @@ async function loadModuleData(moduleName) {
             loadDashboard();
             break;
         case 'cash-box':
-            loadCashBoxSummary();
+            initCashBoxModule();
             break;
         case 'sales':
             initSalesModule();
@@ -255,6 +258,9 @@ async function loadDashboard() {
         
         // Render cash box history
         renderCashBoxHistory(data.cash_box_history);
+        
+        // Load expiration notifications
+        loadExpirationNotifications();
     } catch (error) {
         console.error('Error loading dashboard:', error);
         showAlert('Error al cargar el dashboard', 'error');
@@ -368,7 +374,180 @@ function renderCashBoxHistory(history) {
     container.innerHTML = html;
 }
 
+// Expiration Notifications
+let notificationsState = {
+    notifications: [],
+    panelOpen: false
+};
+
+async function loadExpirationNotifications() {
+    try {
+        const response = await apiRequest('/products/expiration-notifications');
+        notificationsState.notifications = response.data;
+        const summary = response.summary;
+        
+        // Update badge in header
+        updateNotificationsBadge(summary.total);
+        
+        // Update dashboard section
+        updateDashboardNotifications(notificationsState.notifications, summary);
+        
+        // Update panel if open
+        if (notificationsState.panelOpen) {
+            updateNotificationsPanel(notificationsState.notifications, summary);
+        }
+    } catch (error) {
+        console.error('Error loading expiration notifications:', error);
+    }
+}
+
+function updateNotificationsBadge(count) {
+    const badge = document.getElementById('notifications-badge');
+    if (count > 0) {
+        badge.textContent = count;
+        badge.style.display = 'block';
+    } else {
+        badge.style.display = 'none';
+    }
+}
+
+function updateDashboardNotifications(notifications, summary) {
+    const section = document.getElementById('expiration-notifications-section');
+    
+    if (!notifications || notifications.length === 0) {
+        section.innerHTML = '';
+        return;
+    }
+    
+    const expired = notifications.filter(n => n.is_expired);
+    const expiringSoon = notifications.filter(n => !n.is_expired);
+    
+    let html = '';
+    
+    // Expired products alert
+    if (expired.length > 0) {
+        html += `
+            <div class="card expiration-alert-card has-expired">
+                <div class="expiration-alert-header">
+                    <div>
+                        <h3 class="expiration-alert-title">⚠️ Productos Vencidos</h3>
+                        <p style="font-size: 13px; color: #ef4444; margin-top: 4px;">Requieren atención inmediata</p>
+                    </div>
+                    <div class="expiration-alert-count">${expired.length}</div>
+                </div>
+                <div style="max-height: 200px; overflow-y: auto;">
+                    ${expired.slice(0, 5).map(n => `
+                        <div style="padding: 8px; background: white; border-radius: 6px; margin-bottom: 6px; border-left: 3px solid #ef4444;">
+                            <div style="font-weight: 600; font-size: 14px; color: #1e293b;">${n.product_name}</div>
+                            <div style="font-size: 12px; color: #64748b; margin-top: 2px;">
+                                📦 Lote: ${n.batch_number} | 📍 ${n.location || 'Sin ubicación'} | Cantidad: ${n.quantity_available} uds
+                            </div>
+                            <div style="font-size: 12px; color: #ef4444; margin-top: 4px; font-weight: 500;">
+                                ${n.message} (${n.expiration_date_formatted})
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+                ${expired.length > 5 ? `<p style="text-align: center; margin-top: 8px; color: #64748b; font-size: 12px;">Y ${expired.length - 5} más...</p>` : ''}
+                <button class="btn btn-sm btn-danger" onclick="toggleNotificationsPanel()" style="width: 100%; margin-top: 12px;">
+                    Ver Todos los Vencidos
+                </button>
+            </div>
+        `;
+    }
+    
+    // Expiring soon alert
+    if (expiringSoon.length > 0) {
+        html += `
+            <div class="card expiration-alert-card expiring-soon">
+                <div class="expiration-alert-header">
+                    <div>
+                        <h3 class="expiration-alert-title">⏰ Productos Próximos a Vencer</h3>
+                        <p style="font-size: 13px; color: #f59e0b; margin-top: 4px;">Vencen en los próximos 30 días</p>
+                    </div>
+                    <div class="expiration-alert-count">${expiringSoon.length}</div>
+                </div>
+                <div style="max-height: 200px; overflow-y: auto;">
+                    ${expiringSoon.slice(0, 5).map(n => `
+                        <div style="padding: 8px; background: white; border-radius: 6px; margin-bottom: 6px; border-left: 3px solid ${n.urgency === 'critical' ? '#f97316' : '#f59e0b'};">
+                            <div style="font-weight: 600; font-size: 14px; color: #1e293b;">${n.product_name}</div>
+                            <div style="font-size: 12px; color: #64748b; margin-top: 2px;">
+                                📦 Lote: ${n.batch_number} | 📍 ${n.location || 'Sin ubicación'} | Cantidad: ${n.quantity_available} uds
+                            </div>
+                            <div style="font-size: 12px; color: ${n.urgency === 'critical' ? '#f97316' : '#f59e0b'}; margin-top: 4px; font-weight: 500;">
+                                ${n.message} (${n.expiration_date_formatted})
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+                ${expiringSoon.length > 5 ? `<p style="text-align: center; margin-top: 8px; color: #64748b; font-size: 12px;">Y ${expiringSoon.length - 5} más...</p>` : ''}
+                <button class="btn btn-sm btn-warning" onclick="toggleNotificationsPanel()" style="width: 100%; margin-top: 12px; background: #f59e0b;">
+                    Ver Todos
+                </button>
+            </div>
+        `;
+    }
+    
+    section.innerHTML = html;
+}
+
+function toggleNotificationsPanel() {
+    const panel = document.getElementById('notifications-panel');
+    notificationsState.panelOpen = !notificationsState.panelOpen;
+    
+    if (notificationsState.panelOpen) {
+        panel.style.display = 'flex';
+        updateNotificationsPanel(notificationsState.notifications);
+    } else {
+        panel.style.display = 'none';
+    }
+}
+
+function updateNotificationsPanel(notifications) {
+    const content = document.getElementById('notifications-content');
+    
+    if (!notifications || notifications.length === 0) {
+        content.innerHTML = '<p class="text-muted" style="text-align: center; padding: 40px 20px;">No hay notificaciones de vencimientos</p>';
+        return;
+    }
+    
+    const html = notifications.map(n => {
+        const urgencyClass = n.is_expired ? 'expired' : n.urgency;
+        const icon = n.is_expired ? '🚫' : (n.urgency === 'critical' ? '⚠️' : '⏰');
+        
+        return `
+            <div class="notification-item ${urgencyClass}" onclick="showProductDetails(${n.product_id})">
+                <div class="notification-item-header">
+                    <div class="notification-item-title">${icon} ${n.product_name}</div>
+                    <span class="notification-item-badge ${urgencyClass}">
+                        ${n.is_expired ? 'VENCIDO' : (n.urgency === 'critical' ? 'URGENTE' : 'PRÓXIMO')}
+                    </span>
+                </div>
+                <div class="notification-item-details">
+                    <div><strong>Lote:</strong> ${n.batch_number}</div>
+                    <div><strong>Cantidad:</strong> ${n.quantity_available} unidades</div>
+                    <div><strong>Vencimiento:</strong> ${n.expiration_date_formatted} - ${n.message}</div>
+                </div>
+                <div class="notification-item-location">📍 ${n.location || 'Sin ubicación'}</div>
+            </div>
+        `;
+    }).join('');
+    
+    content.innerHTML = html;
+}
+
 // Cash Box Module
+function initCashBoxModule() {
+    loadCashBoxSummary();
+    
+    // Initialize history if not already done
+    if (!document.getElementById('cashbox-year-filter').value) {
+        initializeCashBoxHistory();
+    }
+}
+
+
+
 async function loadCashBoxSummary() {
     try {
         const response = await apiRequest('/cash-box/summary');
@@ -444,6 +623,14 @@ async function openCashBox() {
         });
         showToast('Caja abierta correctamente', 'success');
         loadCashBoxSummary();
+        
+        // Update sales button state if we're in the sales module
+        if (document.getElementById('sales-module').classList.contains('active')) {
+            checkCashBoxStatusForSales();
+            // Load current cash box sales
+            document.getElementById('current-cashbox-sales-section').style.display = 'block';
+            loadCurrentCashBoxSales();
+        }
     } catch (error) {
         // Error already shown in apiRequest
     }
@@ -471,6 +658,20 @@ async function closeCashBox() {
         
         showToast(message, difference === 0 ? 'success' : 'info');
         loadCashBoxSummary();
+        
+        // Reload cash box history if we're in the cash box module
+        if (document.getElementById('cashbox-module').classList.contains('active')) {
+            loadCashBoxHistory();
+        }
+        
+        // Update sales button state if we're in the sales module
+        if (document.getElementById('sales-module').classList.contains('active')) {
+            checkCashBoxStatusForSales();
+            // Clear current cash box sales
+            document.getElementById('current-cashbox-sales-section').style.display = 'none';
+            document.getElementById('current-cashbox-sales-list').innerHTML = '<p class="text-muted">No hay ventas registradas en esta caja</p>';
+            document.getElementById('current-cashbox-totals').style.display = 'none';
+        }
     } catch (error) {
         // Error already shown
     }
@@ -515,15 +716,134 @@ async function loadCashMovements() {
     }
 }
 
+function initializeCashBoxHistory() {
+    // Populate year filter
+    const yearSelect = document.getElementById('cashbox-year-filter');
+    const currentYear = new Date().getFullYear();
+    const startYear = 2024; // Adjust based on your needs
+    
+    yearSelect.innerHTML = '';
+    for (let year = currentYear; year >= startYear; year--) {
+        const option = document.createElement('option');
+        option.value = year;
+        option.textContent = year;
+        yearSelect.appendChild(option);
+    }
+    
+    // Add event listener for year change
+    yearSelect.addEventListener('change', function() {
+        loadCashBoxHistory();
+    });
+    
+    // Add event listeners for month buttons
+    const monthButtons = document.querySelectorAll('#cashbox-month-filters .month-btn');
+    monthButtons.forEach(btn => {
+        btn.addEventListener('click', function() {
+            // Remove active class from all buttons
+            monthButtons.forEach(b => b.classList.remove('active'));
+            // Add active class to clicked button
+            this.classList.add('active');
+            // Load cash boxes with new filter
+            loadCashBoxHistory();
+        });
+    });
+    
+    // Load initial data
+    loadCashBoxHistory();
+}
+
+async function loadCashBoxHistory() {
+    try {
+        const year = document.getElementById('cashbox-year-filter').value;
+        const activeMonthBtn = document.querySelector('#cashbox-month-filters .month-btn.active');
+        const month = activeMonthBtn ? activeMonthBtn.getAttribute('data-month') : '';
+        
+        let url = `/cash-box?year=${year}`;
+        if (month) {
+            url += `&month=${month}`;
+        }
+        
+        const response = await apiRequest(url);
+        const cashBoxes = response.data;
+        
+        const container = document.getElementById('cashbox-history-list');
+        const totalsDiv = document.getElementById('cashbox-history-totals');
+        
+        if (cashBoxes.length === 0) {
+            container.innerHTML = '<p class="text-muted">No hay cajas en este período</p>';
+            totalsDiv.style.display = 'none';
+            return;
+        }
+        
+        // Calculate totals
+        const closedCount = cashBoxes.filter(cb => cb.status === 'closed').length;
+        const openCount = cashBoxes.filter(cb => cb.status === 'open').length;
+        
+        // Display cash boxes table
+        container.innerHTML = `
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Fecha Apertura</th>
+                        <th>Fecha Cierre</th>
+                        <th style="text-align: right;">Monto Inicial</th>
+                        <th style="text-align: right;">Ventas</th>
+                        <th style="text-align: right;">Monto Final</th>
+                        <th style="text-align: right;">Diferencia</th>
+                        <th>Abierta por</th>
+                        <th>Cerrada por</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${cashBoxes.map(cb => {
+                        const difference = cb.difference !== null && cb.difference !== undefined 
+                            ? parseFloat(cb.difference).toFixed(2) 
+                            : '0.00';
+                        const diffColor = difference > 0 ? '#10b981' : difference < 0 ? '#dc2626' : '#6b7280';
+                        const isClosed = cb.status === 'closed' || cb.closed_at;
+                        
+                        return `
+                            <tr>
+                                <td>${formatDateTime(cb.opened_at)}</td>
+                                <td>${cb.closed_at ? formatDateTime(cb.closed_at) : '-'}</td>
+                                <td style="text-align: right;">Q ${formatNumber(cb.initial_amount || 0)}</td>
+                                <td style="text-align: right;">Q ${formatNumber(cb.total_sales || 0)}</td>
+                                <td style="text-align: right;">${isClosed ? 'Q ' + formatNumber(cb.final_cash || 0) : '-'}</td>
+                                <td style="text-align: right; color: ${diffColor}; font-weight: 600;">
+                                    ${isClosed ? 'Q ' + difference : '-'}
+                                </td>
+                                <td>${cb.opened_by ? cb.opened_by.name : 'N/A'}</td>
+                                <td>${cb.closed_by ? cb.closed_by.name : '-'}</td>
+                            </tr>
+                        `;
+                    }).join('')}
+                </tbody>
+            </table>
+        `;
+        
+        // Display totals
+        const totalSales = cashBoxes.reduce((sum, cb) => sum + (parseFloat(cb.total_sales) || 0), 0);
+        document.getElementById('cashbox-history-count').textContent = cashBoxes.length;
+        document.getElementById('cashbox-history-closed').textContent = closedCount;
+        document.getElementById('cashbox-history-open').textContent = openCount;
+        document.getElementById('cashbox-history-sales').textContent = formatNumber(totalSales);
+        totalsDiv.style.display = 'block';
+        
+    } catch (error) {
+        console.error('Error loading cash box history:', error);
+        const container = document.getElementById('cashbox-history-list');
+        container.innerHTML = '<p class="text-muted">Error al cargar el historial de cajas</p>';
+    }
+}
+
 // Sales Module
 async function initSalesModule() {
-    // Hide all sections first
-    document.getElementById('new-sale-section').style.display = 'none';
-    document.getElementById('current-sale-section').style.display = 'none';
-    document.getElementById('pending-sales-section').style.display = 'none';
-    
     // Show buttons initially
     document.getElementById('sales-header-actions').style.display = 'flex';
+    
+    // Check cash box status and show relevant sections
+    await checkCashBoxStatusForSales();
+    showSalesModule();
     
     try {
         // Check if there are pending sales
@@ -536,6 +856,36 @@ async function initSalesModule() {
         }
     } catch (error) {
         console.error('Error checking pending sales:', error);
+    }
+}
+
+async function checkCashBoxStatusForSales() {
+    try {
+        const response = await apiRequest('/cash-box/summary');
+        const cashBox = response.data;
+        
+        const newSaleBtn = document.getElementById('new-sale-btn');
+        const warning = document.getElementById('cash-box-closed-warning');
+        
+        if (cashBox.status === 'open') {
+            // Cash box is open - enable button and hide warning
+            newSaleBtn.disabled = false;
+            newSaleBtn.style.opacity = '1';
+            newSaleBtn.style.cursor = 'pointer';
+            warning.style.display = 'none';
+        } else {
+            // Cash box is closed - disable button and show warning
+            newSaleBtn.disabled = true;
+            newSaleBtn.style.opacity = '0.5';
+            newSaleBtn.style.cursor = 'not-allowed';
+            warning.style.display = 'block';
+        }
+    } catch (error) {
+        console.error('Error checking cash box status:', error);
+        // On error, disable button to be safe
+        const newSaleBtn = document.getElementById('new-sale-btn');
+        newSaleBtn.disabled = true;
+        newSaleBtn.style.opacity = '0.5';
     }
 }
 
@@ -788,6 +1138,16 @@ function showAddStockForm() {
 function cancelAddStock() {
     // Reset form
     document.getElementById('add-stock-form').reset();
+    
+    // Clear barcode search
+    const stockBarcodeWrapper = document.getElementById('stock-barcode-wrapper');
+    if (stockBarcodeWrapper) {
+        stockBarcodeWrapper.classList.remove('has-value');
+    }
+    
+    // Hide product info
+    hideStockProductInfo();
+    
     // Show check stock section and hide add form
     document.getElementById('add-stock-section').style.display = 'none';
     document.getElementById('check-stock-section').style.display = 'block';
@@ -813,6 +1173,17 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('product-details-modal')?.addEventListener('click', (e) => {
         if (e.target.id === 'product-details-modal') {
             closeProductDetails();
+        }
+    });
+
+    // Close notifications panel when clicking outside
+    document.addEventListener('click', (e) => {
+        const panel = document.getElementById('notifications-panel');
+        const bell = document.getElementById('notifications-bell');
+        if (notificationsState.panelOpen && 
+            !panel.contains(e.target) && 
+            !bell.contains(e.target)) {
+            toggleNotificationsPanel();
         }
     });
 
@@ -908,15 +1279,37 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 
                 // Display results using index
-                searchResults.innerHTML = products.map((product, index) => `
-                    <div class="search-result-item" data-index="${index}">
-                        <div class="product-name">${product.name}</div>
-                        <div class="product-info">
-                            <span class="product-barcode">${product.barcode}</span>
-                            ${product.description || ''}
+                searchResults.innerHTML = products.map((product, index) => {
+                    let warningBadges = '';
+                    
+                    // Check for warnings
+                    if (product.has_expired_batches) {
+                        warningBadges += '<span style="background: #ef4444; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-left: 8px;">🚫 VENCIDO</span>';
+                    }
+                    if (product.has_expiring_soon_batches) {
+                        warningBadges += '<span style="background: #f97316; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-left: 8px;">⚠️ Por vencer</span>';
+                    }
+                    if (product.stock_warning && product.total_stock > 0) {
+                        warningBadges += '<span style="background: #f59e0b; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-left: 8px;">📦 Stock bajo</span>';
+                    }
+                    if (product.total_stock === 0) {
+                        warningBadges += '<span style="background: #94a3b8; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-left: 8px;">❌ Sin stock</span>';
+                    }
+                    
+                    return `
+                        <div class="search-result-item" data-index="${index}">
+                            <div class="product-name">
+                                ${product.name}
+                                ${warningBadges}
+                            </div>
+                            <div class="product-info">
+                                <span class="product-barcode">${product.barcode}</span>
+                                ${product.description || ''}
+                                ${product.total_stock !== undefined ? `<span style="margin-left: 12px; color: #64748b;">Stock: ${product.total_stock}</span>` : ''}
+                            </div>
                         </div>
-                    </div>
-                `).join('');
+                    `;
+                }).join('');
                 
                 // Add click event listeners to result items
                 searchResults.querySelectorAll('.search-result-item').forEach(item => {
@@ -1025,7 +1418,52 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Load presentations when product is selected in stock form
+    // Stock barcode search
+    const stockBarcodeInput = document.getElementById('stock-barcode');
+    const stockBarcodeWrapper = document.getElementById('stock-barcode-wrapper');
+    let stockBarcodeTimeout;
+    
+    if (stockBarcodeInput && stockBarcodeWrapper) {
+        stockBarcodeInput.addEventListener('input', function(e) {
+            const barcode = e.target.value.trim();
+            
+            // Update clear button visibility
+            if (barcode.length > 0) {
+                stockBarcodeWrapper.classList.add('has-value');
+            } else {
+                stockBarcodeWrapper.classList.remove('has-value');
+                hideStockProductInfo();
+                return;
+            }
+            
+            // Search for product after 500ms
+            clearTimeout(stockBarcodeTimeout);
+            if (barcode.length >= 6) {
+                stockBarcodeTimeout = setTimeout(async function() {
+                    try {
+                        const response = await apiRequest('/products/search?search=' + encodeURIComponent(barcode));
+                        
+                        if (response.data && response.data.length > 0) {
+                            const product = response.data[0];
+                            
+                            // Check exact match
+                            if (product.barcode === barcode) {
+                                loadStockProductInfo(product);
+                            }
+                        } else {
+                            hideStockProductInfo();
+                        }
+                    } catch (error) {
+                        hideStockProductInfo();
+                    }
+                }, 500);
+            }
+        });
+    }
+    
+    // Functions moved to global scope: loadStockProductInfo, hideStockProductInfo
+
+    // Load presentations when product is selected in stock form (Legacy support - now handled by barcode search)
     document.getElementById('stock-product-id').addEventListener('change', async (e) => {
         const productId = e.target.value;
         const presentationSelect = document.getElementById('stock-presentation');
@@ -1056,74 +1494,131 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Check stock form
-    document.getElementById('check-stock-form').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const productId = e.target.product_id.value;
-
-        try {
-            // Consultar disponibilidad
-            const response = await apiRequest(`/stock/check/${productId}`);
-            const stock = response.data;
+    // Check stock - automatic search on input
+    let checkStockTimeout = null;
+    const checkStockBarcodeInput = document.getElementById('check-stock-barcode');
+    
+    if (checkStockBarcodeInput) {
+        checkStockBarcodeInput.addEventListener('input', function() {
+            const barcode = this.value.trim();
             
-            document.getElementById('stock-result').innerHTML = `
-                <div class="alert success">
-                    <strong>📦 Stock Disponible: ${stock.available_quantity} unidades</strong><br>
-                    Producto ID: ${productId}
-                </div>
-            `;
-            
-            // Cargar lotes automáticamente
-            try {
-                const batchesResponse = await apiRequest(`/stock/batches/${productId}`);
-                const batches = batchesResponse.data;
-                const container = document.getElementById('stock-batches-list');
-                
-                if (batches.length === 0) {
-                    container.innerHTML = '<p class="text-muted">No hay lotes disponibles para este producto</p>';
-                    return;
-                }
-
-                container.innerHTML = `
-                    <h4 style="margin-top: 20px;">Lotes de Inventario</h4>
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Lote</th>
-                                <th>Cantidad Disponible</th>
-                                <th>Fecha Vencimiento</th>
-                                <th>Ubicación</th>
-                                <th>Costo Unit.</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${batches.map(batch => `
-                                <tr>
-                                    <td>${batch.batch_number || 'N/A'}</td>
-                                    <td><strong>${batch.quantity_available}</strong> / ${batch.quantity_initial}</td>
-                                    <td>${batch.expiration_date ? new Date(batch.expiration_date).toLocaleDateString('es-GT') : 'N/A'}</td>
-                                    <td>${batch.location || 'N/A'}</td>
-                                    <td>Q ${parseFloat(batch.unit_cost || 0).toFixed(2)}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                `;
-            } catch (error) {
-                document.getElementById('stock-batches-list').innerHTML = `
-                    <p class="text-muted">Error al cargar lotes del producto</p>
-                `;
+            // Clear previous timeout
+            if (checkStockTimeout) {
+                clearTimeout(checkStockTimeout);
             }
-        } catch (error) {
-            document.getElementById('stock-result').innerHTML = `
-                <div class="alert error">
-                    <strong>❌ Error al consultar stock</strong><br>
-                    ${error.message}
-                </div>
-            `;
-            document.getElementById('stock-batches-list').innerHTML = '';
-        }
-    });
+            
+            // Clear results if empty
+            if (barcode.length === 0) {
+                document.getElementById('stock-result').innerHTML = '';
+                document.getElementById('stock-batches-list').innerHTML = '';
+                document.getElementById('check-stock-product-id').value = '';
+                return;
+            }
+            
+            // Search after 500ms
+            if (barcode.length >= 4) {
+                checkStockTimeout = setTimeout(async () => {
+                    try {
+                        // First search for product by barcode
+                        const searchResponse = await apiRequest('/products/search?search=' + encodeURIComponent(barcode));
+                        
+                        if (!searchResponse.data || searchResponse.data.length === 0) {
+                            document.getElementById('stock-result').innerHTML = `
+                                <div class="alert error">
+                                    <strong>❌ Producto no encontrado</strong><br>
+                                    No existe un producto con el código de barras: ${barcode}
+                                </div>
+                            `;
+                            document.getElementById('stock-batches-list').innerHTML = '';
+                            return;
+                        }
+                        
+                        const product = searchResponse.data[0];
+                        
+                        // Check exact match
+                        if (product.barcode !== barcode) {
+                            document.getElementById('stock-result').innerHTML = `
+                                <div class="alert error">
+                                    <strong>❌ Código de barras no coincide exactamente</strong>
+                                </div>
+                            `;
+                            document.getElementById('stock-batches-list').innerHTML = '';
+                            return;
+                        }
+                        
+                        const productId = product.id;
+                        
+                        // Set hidden product_id field
+                        document.getElementById('check-stock-product-id').value = productId;
+                        
+                        // Consultar disponibilidad
+                        const response = await apiRequest(`/stock/check/${productId}`);
+                        const stock = response.data;
+                        
+                        document.getElementById('stock-result').innerHTML = `
+                            <div class="alert success">
+                                <strong>📦 Stock Disponible: ${stock.available_quantity} unidades</strong><br>
+                                <div style="margin-top: 8px; color: #475569;">
+                                    <strong>Producto:</strong> ${product.name}<br>
+                                    <strong>Código:</strong> ${product.barcode}
+                                </div>
+                            </div>
+                        `;
+                        
+                        // Cargar lotes automáticamente
+                        try {
+                            const batchesResponse = await apiRequest(`/stock/batches/${productId}`);
+                            const batches = batchesResponse.data;
+                            const container = document.getElementById('stock-batches-list');
+                            
+                            if (batches.length === 0) {
+                                container.innerHTML = '<p class="text-muted">No hay lotes disponibles para este producto</p>';
+                                return;
+                            }
+
+                            container.innerHTML = `
+                                <h4 style="margin-top: 20px;">Lotes de Inventario</h4>
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Lote</th>
+                                            <th>Presentación</th>
+                                            <th>Cantidad Disponible</th>
+                                            <th>Fecha Vencimiento</th>
+                                            <th>Ubicación</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${batches.map(batch => `
+                                            <tr>
+                                                <td>${batch.batch_number || 'N/A'}</td>
+                                                <td>${batch.presentation ? batch.presentation.name : 'Unidad'}</td>
+                                                <td><strong>${batch.quantity_available}</strong> / ${batch.quantity_initial}</td>
+                                                <td>${batch.expiration_date ? new Date(batch.expiration_date).toLocaleDateString('es-GT') : 'N/A'}</td>
+                                                <td>${batch.location || 'Sin ubicación'}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            `;
+                        } catch (error) {
+                            document.getElementById('stock-batches-list').innerHTML = `
+                                <p class="text-muted">Error al cargar lotes del producto</p>
+                            `;
+                        }
+                    } catch (error) {
+                        document.getElementById('stock-result').innerHTML = `
+                            <div class="alert error">
+                                <strong>❌ Error al consultar stock</strong><br>
+                                ${error.message}
+                            </div>
+                        `;
+                        document.getElementById('stock-batches-list').innerHTML = '';
+                    }
+                }, 500);
+            }
+        });
+    }
 
     // Annul sale form
     document.getElementById('annul-sale-form').addEventListener('submit', async (e) => {
@@ -1149,6 +1644,66 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Product form
+    // Auto-complete product data when barcode is entered
+    const barcodeInput = document.getElementById('product-barcode');
+    if (barcodeInput) {
+        let barcodeTimeout;
+        let existingProductId = null;
+        
+        barcodeInput.addEventListener('input', function(e) {
+            clearTimeout(barcodeTimeout);
+            const barcode = e.target.value.trim();
+            
+            // Reset form state if barcode is cleared or too short
+            if (barcode.length < 6) {
+                existingProductId = null;
+                enableProductForm();
+                return;
+            }
+            
+            // Only search if barcode has at least 6 characters and we're not editing
+            if (barcode.length >= 6 && !currentEditingProductId) {
+                barcodeTimeout = setTimeout(async function() {
+                    try {
+                        // Search for product by barcode
+                        const response = await apiRequest('/products/search?search=' + encodeURIComponent(barcode));
+                        
+                        if (response.data && response.data.length > 0) {
+                            const product = response.data[0];
+                            
+                            // Check if barcode matches exactly
+                            if (product.barcode === barcode) {
+                                existingProductId = product.id;
+                                
+                                // Auto-fill form with existing product data
+                                document.querySelector('#product-form input[name="name"]').value = product.name || '';
+                                document.querySelector('#product-form textarea[name="description"]').value = product.description || '';
+                                document.querySelector('#product-form select[name="category_id"]').value = product.category_id || '';
+                                document.getElementById('product-brand').value = product.brand || '';
+                                document.getElementById('product-location').value = product.location || '';
+                                document.getElementById('product-supplier').value = product.supplier_id || '';
+                                
+                                // Disable form to prevent duplicate creation
+                                disableProductForm(product.id);
+                                
+                                // Show warning notification
+                                showNotification('⚠️ PRODUCTO YA REGISTRADO: Este código de barras ya existe en el sistema (ID: ' + product.id + '). No se puede crear un producto duplicado. Para modificarlo, use el botón "Editar Producto".', 'error');
+                            }
+                        } else {
+                            // Product not found, enable form
+                            existingProductId = null;
+                            enableProductForm();
+                        }
+                    } catch (error) {
+                        // Product doesn't exist, enable form
+                        existingProductId = null;
+                        enableProductForm();
+                    }
+                }, 500);
+            }
+        });
+    }
+
     document.getElementById('product-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
@@ -1170,15 +1725,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 showToast('Producto actualizado exitosamente', 'success');
             } else {
                 // Create new product
-                const response = await apiRequest('/products', {
+                await apiRequest('/products', {
                     method: 'POST',
                     body: JSON.stringify(data)
                 });
                 showToast('Producto creado exitosamente', 'success');
                 
-                // Switch to edit mode to allow adding presentations
-                currentEditingProductId = response.data.id;
-                editProduct(response.data.id);
+                // Close form and reload catalog
+                cancelProductForm();
             }
         } catch (error) {
             // Error shown by apiRequest
@@ -1225,6 +1779,77 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
+// Product Form Helper Functions
+function disableProductForm(productId) {
+    // Disable all form inputs except barcode
+    document.querySelector('#product-form input[name="name"]').disabled = true;
+    document.querySelector('#product-form textarea[name="description"]').disabled = true;
+    document.querySelector('#product-form select[name="category_id"]').disabled = true;
+    document.getElementById('product-brand').disabled = true;
+    document.getElementById('product-location').disabled = true;
+    document.getElementById('product-supplier').disabled = true;
+    
+    // Disable save button and change its text
+    const saveBtn = document.getElementById('save-product-btn');
+    saveBtn.disabled = true;
+    saveBtn.style.opacity = '0.5';
+    saveBtn.style.cursor = 'not-allowed';
+    saveBtn.textContent = '❌ Producto Ya Existe';
+    
+    // Add button to edit existing product
+    let editExistingBtn = document.getElementById('edit-existing-product-btn');
+    if (!editExistingBtn) {
+        editExistingBtn = document.createElement('button');
+        editExistingBtn.id = 'edit-existing-product-btn';
+        editExistingBtn.type = 'button';
+        editExistingBtn.className = 'btn btn-primary';
+        editExistingBtn.style.float = 'right';
+        editExistingBtn.style.marginRight = '8px';
+        editExistingBtn.textContent = '✏️ Editar Producto Existente';
+        editExistingBtn.onclick = function() {
+            editProduct(productId);
+        };
+        saveBtn.parentElement.insertBefore(editExistingBtn, saveBtn);
+    } else {
+        editExistingBtn.style.display = 'inline-block';
+        editExistingBtn.onclick = function() {
+            editProduct(productId);
+        };
+    }
+}
+
+function enableProductForm() {
+    // Enable all form inputs
+    const nameInput = document.querySelector('#product-form input[name="name"]');
+    const descInput = document.querySelector('#product-form textarea[name="description"]');
+    const categorySelect = document.querySelector('#product-form select[name="category_id"]');
+    const brandInput = document.getElementById('product-brand');
+    const locationInput = document.getElementById('product-location');
+    const supplierSelect = document.getElementById('product-supplier');
+    
+    if (nameInput) nameInput.disabled = false;
+    if (descInput) descInput.disabled = false;
+    if (categorySelect) categorySelect.disabled = false;
+    if (brandInput) brandInput.disabled = false;
+    if (locationInput) locationInput.disabled = false;
+    if (supplierSelect) supplierSelect.disabled = false;
+    
+    // Enable save button and restore its text
+    const saveBtn = document.getElementById('save-product-btn');
+    if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.style.opacity = '1';
+        saveBtn.style.cursor = 'pointer';
+        saveBtn.textContent = 'Guardar Producto';
+    }
+    
+    // Hide edit existing button
+    const editExistingBtn = document.getElementById('edit-existing-product-btn');
+    if (editExistingBtn) {
+        editExistingBtn.style.display = 'none';
+    }
+}
+
 // Utility Functions
 function formatNumber(number) {
     return parseFloat(number).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -1246,6 +1871,154 @@ function formatDateTime(dateString) {
         minute: '2-digit'
     };
     return date.toLocaleDateString('es-GT', options);
+}
+
+// Search Input Clear Functions
+function clearProductSearch() {
+    const input = document.getElementById('product-search');
+    const wrapper = document.getElementById('product-search-wrapper');
+    const results = document.getElementById('search-results');
+    
+    input.value = '';
+    wrapper.classList.remove('has-value');
+    results.style.display = 'none';
+    results.innerHTML = '';
+    input.focus();
+}
+
+function clearCatalogSearch() {
+    const input = document.getElementById('catalog-search');
+    const wrapper = document.getElementById('catalog-search-wrapper');
+    
+    input.value = '';
+    wrapper.classList.remove('has-value');
+    input.focus();
+    
+    // Reload catalog without filter
+    loadProductCatalog(1);
+}
+
+function clearStockBarcode() {
+    const input = document.getElementById('stock-barcode');
+    const wrapper = document.getElementById('stock-barcode-wrapper');
+    
+    if (!input || !wrapper) return;
+    
+    input.value = '';
+    wrapper.classList.remove('has-value');
+    
+    // Hide product info
+    const productInfo = document.getElementById('stock-product-info');
+    if (productInfo) productInfo.style.display = 'none';
+    
+    const productId = document.getElementById('stock-product-id');
+    if (productId) productId.value = '';
+    
+    const presentation = document.getElementById('stock-presentation');
+    if (presentation) presentation.innerHTML = '<option value="">Primero busque el producto</option>';
+    
+    input.focus();
+}
+
+function clearCheckStockBarcode() {
+    const input = document.getElementById('check-stock-barcode');
+    const wrapper = document.getElementById('check-stock-barcode-wrapper');
+    
+    if (!input || !wrapper) return;
+    
+    input.value = '';
+    wrapper.classList.remove('has-value');
+    
+    const productId = document.getElementById('check-stock-product-id');
+    if (productId) productId.value = '';
+    
+    // Clear results
+    const stockResult = document.getElementById('stock-result');
+    if (stockResult) stockResult.innerHTML = '';
+    
+    const batchesList = document.getElementById('stock-batches-list');
+    if (batchesList) batchesList.innerHTML = '';
+    
+    input.focus();
+}
+
+function loadStockProductInfo(product) {
+    // Set product ID in hidden field
+    document.getElementById('stock-product-id').value = product.id;
+    
+    // Show product info
+    document.getElementById('stock-product-info').style.display = 'block';
+    document.getElementById('stock-product-name').textContent = product.name;
+    document.getElementById('stock-product-barcode').textContent = product.barcode;
+    document.getElementById('stock-product-category').textContent = product.category_id ? 'ID: ' + product.category_id : 'Sin categoría';
+    document.getElementById('stock-product-stock').textContent = product.total_stock + ' unidades';
+    
+    // Load presentations
+    const presentationSelect = document.getElementById('stock-presentation');
+    presentationSelect.innerHTML = '<option value="">Seleccione presentación</option>';
+    
+    if (product.presentations && product.presentations.length > 0) {
+        product.presentations.forEach(function(p) {
+            const option = document.createElement('option');
+            option.value = p.id;
+            option.textContent = p.name + ' (' + p.factor + ' unidades)';
+            presentationSelect.appendChild(option);
+        });
+    } else {
+        presentationSelect.innerHTML = '<option value="">Sin presentaciones disponibles</option>';
+    }
+}
+
+function hideStockProductInfo() {
+    const stockProductInfo = document.getElementById('stock-product-info');
+    const stockProductId = document.getElementById('stock-product-id');
+    const stockPresentation = document.getElementById('stock-presentation');
+    
+    if (stockProductInfo) stockProductInfo.style.display = 'none';
+    if (stockProductId) stockProductId.value = '';
+    if (stockPresentation) stockPresentation.innerHTML = '<option value="">Primero busque el producto</option>';
+}
+
+// Update search input wrappers to show/hide clear button
+function setupSearchClearButtons() {
+    const productSearch = document.getElementById('product-search');
+    const productWrapper = document.getElementById('product-search-wrapper');
+    
+    if (productSearch && productWrapper) {
+        productSearch.addEventListener('input', function() {
+            if (this.value.trim().length > 0) {
+                productWrapper.classList.add('has-value');
+            } else {
+                productWrapper.classList.remove('has-value');
+            }
+        });
+    }
+    
+    const catalogSearch = document.getElementById('catalog-search');
+    const catalogWrapper = document.getElementById('catalog-search-wrapper');
+    
+    if (catalogSearch && catalogWrapper) {
+        catalogSearch.addEventListener('input', function() {
+            if (this.value.trim().length > 0) {
+                catalogWrapper.classList.add('has-value');
+            } else {
+                catalogWrapper.classList.remove('has-value');
+            }
+        });
+    }
+    
+    const checkStockBarcode = document.getElementById('check-stock-barcode');
+    const checkStockWrapper = document.getElementById('check-stock-barcode-wrapper');
+    
+    if (checkStockBarcode && checkStockWrapper) {
+        checkStockBarcode.addEventListener('input', function() {
+            if (this.value.trim().length > 0) {
+                checkStockWrapper.classList.add('has-value');
+            } else {
+                checkStockWrapper.classList.remove('has-value');
+            }
+        });
+    }
 }
 
 // Product Catalog Module
@@ -1313,7 +2086,7 @@ function renderProductCatalog(products) {
                 </div>
                 <div class="product-card-price">Q ${formatNumber(product.price_with_iva)}</div>
                 <div style="font-size: 12px; color: #64748b; margin-bottom: 8px;">
-                    Base: Q ${formatNumber(product.base_price)} + IVA
+                    Q ${formatNumber(product.base_price)} / ${product.base_presentation_name || 'Unidad'} + IVA
                 </div>
                 <div class="product-card-stock">
                     <span>Stock: ${product.total_stock} unidades</span>
@@ -1882,6 +2655,9 @@ function showNewProductForm() {
     document.getElementById('presentations-section').style.display = 'none';
     document.getElementById('save-product-btn').textContent = 'Guardar Producto';
     
+    // Reset form state (enable all fields)
+    enableProductForm();
+    
     // Toggle button
     document.getElementById('new-product-btn').style.display = 'none';
 }
@@ -1890,6 +2666,9 @@ function cancelProductForm() {
     currentEditingProductId = null;
     document.getElementById('product-form-section').style.display = 'none';
     document.getElementById('catalog-view-section').style.display = 'block';
+    
+    // Reset form state
+    enableProductForm();
     
     // Toggle button
     document.getElementById('new-product-btn').style.display = 'inline-block';
@@ -2378,4 +3157,214 @@ if (document.getElementById('import-history-modal')) {
         }
     });
 }
+
+// ==================== SALES HISTORY AND CURRENT CASH BOX ====================
+
+async function loadCurrentCashBoxSales() {
+    try {
+        const response = await apiRequest('/sales/current-cash-box');
+        const sales = response.data;
+        const cashBox = response.cash_box;
+        
+        const container = document.getElementById('current-cashbox-sales-list');
+        const totalsDiv = document.getElementById('current-cashbox-totals');
+        
+        if (sales.length === 0) {
+            container.innerHTML = '<p class="text-muted">No hay ventas registradas en esta caja</p>';
+            totalsDiv.style.display = 'none';
+            return;
+        }
+        
+        // Calculate totals
+        let totalAmount = 0;
+        sales.forEach(sale => {
+            if (sale.status === 'completed') {
+                totalAmount += parseFloat(sale.total);
+            }
+        });
+        
+        // Display sales table
+        container.innerHTML = `
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Fecha</th>
+                        <th>Cliente</th>
+                        <th>NIT</th>
+                        <th>Total</th>
+                        <th>Estado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${sales.map(sale => `
+                        <tr>
+                            <td>#${sale.id}</td>
+                            <td>${new Date(sale.created_at).toLocaleString('es-GT')}</td>
+                            <td>${sale.customer_name || 'N/A'}</td>
+                            <td>${sale.customer_nit || 'CF'}</td>
+                            <td>Q ${parseFloat(sale.total).toFixed(2)}</td>
+                            <td>
+                                <span class="badge badge-${sale.status === 'completed' ? 'success' : sale.status === 'annulled' ? 'danger' : 'warning'}">
+                                    ${sale.status === 'completed' ? 'Entregado' : sale.status === 'annulled' ? 'Anulado' : 'Pendiente'}
+                                </span>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+        
+        // Display totals
+        document.getElementById('cashbox-sales-count').textContent = sales.filter(s => s.status === 'completed').length;
+        document.getElementById('cashbox-sales-total').textContent = totalAmount.toFixed(2);
+        totalsDiv.style.display = 'block';
+        
+    } catch (error) {
+        console.error('Error loading current cash box sales:', error);
+    }
+}
+
+function initializeSalesHistory() {
+    // Populate year filter
+    const yearSelect = document.getElementById('sales-year-filter');
+    const currentYear = new Date().getFullYear();
+    const startYear = 2024; // Adjust based on your needs
+    
+    yearSelect.innerHTML = '';
+    for (let year = currentYear; year >= startYear; year--) {
+        const option = document.createElement('option');
+        option.value = year;
+        option.textContent = year;
+        yearSelect.appendChild(option);
+    }
+    
+    // Add event listener for year change
+    yearSelect.addEventListener('change', function() {
+        loadSalesHistory();
+    });
+    
+    // Add event listeners for month buttons
+    const monthButtons = document.querySelectorAll('.month-btn');
+    monthButtons.forEach(btn => {
+        btn.addEventListener('click', function() {
+            // Remove active class from all buttons
+            monthButtons.forEach(b => b.classList.remove('active'));
+            // Add active class to clicked button
+            this.classList.add('active');
+            // Load sales with new filter
+            loadSalesHistory();
+        });
+    });
+    
+    // Load initial data
+    loadSalesHistory();
+}
+
+async function loadSalesHistory() {
+    try {
+        const year = document.getElementById('sales-year-filter').value;
+        const activeMonthBtn = document.querySelector('.month-btn.active');
+        const month = activeMonthBtn ? activeMonthBtn.getAttribute('data-month') : '';
+        
+        let url = `/sales?year=${year}`;
+        if (month) {
+            url += `&month=${month}`;
+        }
+        
+        const response = await apiRequest(url);
+        const sales = response.data;
+        
+        const container = document.getElementById('sales-history-list');
+        const totalsDiv = document.getElementById('sales-history-totals');
+        
+        if (sales.length === 0) {
+            container.innerHTML = '<p class="text-muted">No hay ventas en este período</p>';
+            totalsDiv.style.display = 'none';
+            return;
+        }
+        
+        // Calculate totals
+        let totalAmount = 0;
+        sales.forEach(sale => {
+            if (sale.status === 'completed') {
+                totalAmount += parseFloat(sale.total);
+            }
+        });
+        
+        // Display sales table
+        container.innerHTML = `
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Fecha</th>
+                        <th>Cliente</th>
+                        <th>NIT</th>
+                        <th>Productos</th>
+                        <th>Total</th>
+                        <th>Estado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${sales.map(sale => `
+                        <tr>
+                            <td>#${sale.id}</td>
+                            <td>${new Date(sale.created_at).toLocaleString('es-GT')}</td>
+                            <td>${sale.customer_name || 'N/A'}</td>
+                            <td>${sale.customer_nit || 'CF'}</td>
+                            <td>${sale.items ? sale.items.length : 0} productos</td>
+                            <td>Q ${parseFloat(sale.total).toFixed(2)}</td>
+                            <td>
+                                <span class="badge badge-${sale.status === 'completed' ? 'success' : sale.status === 'annulled' ? 'danger' : 'warning'}">
+                                    ${sale.status === 'completed' ? 'Entregado' : sale.status === 'annulled' ? 'Anulado' : 'Pendiente'}
+                                </span>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+        
+        // Display totals
+        const completedCount = sales.filter(s => s.status === 'completed').length;
+        const annulledCount = sales.filter(s => s.status === 'annulled').length;
+        
+        document.getElementById('history-sales-count').textContent = completedCount;
+        document.getElementById('history-sales-annulled').textContent = annulledCount;
+        document.getElementById('history-sales-total').textContent = totalAmount.toFixed(2);
+        totalsDiv.style.display = 'block';
+        
+    } catch (error) {
+        console.error('Error loading sales history:', error);
+        const container = document.getElementById('sales-history-list');
+        container.innerHTML = '<p class="text-muted">Error al cargar el historial de ventas</p>';
+    }
+}
+
+function showSalesModule() {
+    // Hide all sections first
+    document.getElementById('new-sale-section').style.display = 'none';
+    document.getElementById('current-sale-section').style.display = 'none';
+    document.getElementById('pending-sales-section').style.display = 'none';
+    
+    // Check cash box status
+    checkCashBoxStatusForSales();
+    
+    // Show current cash box sales if there's an open cash box
+    const cashBoxWarning = document.getElementById('cash-box-closed-warning');
+    if (cashBoxWarning.style.display === 'none') {
+        document.getElementById('current-cashbox-sales-section').style.display = 'block';
+        loadCurrentCashBoxSales();
+    } else {
+        document.getElementById('current-cashbox-sales-section').style.display = 'none';
+    }
+    
+    // Always show sales history
+    document.getElementById('sales-history-section').style.display = 'block';
+    if (!document.getElementById('sales-year-filter').value) {
+        initializeSalesHistory();
+    }
+}
+
 

@@ -32,6 +32,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Sales
     Route::prefix('sales')->group(function () {
+        Route::get('/', [SaleController::class, 'index']); // List all sales with filters
+        Route::get('/current-cash-box', [SaleController::class, 'currentCashBox']); // Sales from current open cash box
         Route::post('/', [SaleController::class, 'create']);
         Route::get('/pending', [SaleController::class, 'pending']);
         Route::get('/{saleId}', [SaleController::class, 'show']);
@@ -47,6 +49,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/search', [ProductController::class, 'search']);
         Route::get('/catalog', [ProductController::class, 'catalog']);
         Route::get('/categories', [ProductController::class, 'categories']);
+        Route::get('/expiration-notifications', [ProductController::class, 'expirationNotifications']);
         Route::post('/', [ProductController::class, 'store']);
         Route::get('/{productId}', [ProductController::class, 'show']);
         Route::put('/{productId}', [ProductController::class, 'update']);

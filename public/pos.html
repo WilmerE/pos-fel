@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sistema POS - FEL</title>
-    <link rel="stylesheet" href="/css/pos.css">
+    <link rel="stylesheet" href="/css/pos.css?v=20260215015">
 </head>
 <body>
     <!-- Login Screen -->
@@ -43,12 +43,27 @@
             <div class="header-content">
                 <h1>POS - FEL</h1>
                 <div class="user-info">
+                    <button id="notifications-bell" class="btn btn-sm btn-outline" onclick="toggleNotificationsPanel()" style="position: relative; margin-right: 12px;">
+                        🔔
+                        <span id="notifications-badge" class="notifications-badge" style="display: none;">0</span>
+                    </button>
                     <span class="user-name" id="user-name"></span>
                     <span class="user-role" id="user-role"></span>
                     <button class="btn btn-sm btn-outline" onclick="logout()">Cerrar Sesión</button>
                 </div>
             </div>
         </header>
+
+        <!-- Notifications Panel -->
+        <div id="notifications-panel" class="notifications-panel" style="display: none;">
+            <div class="notifications-header">
+                <h3>🔔 Notificaciones de Vencimientos</h3>
+                <button class="btn-close" onclick="toggleNotificationsPanel()">×</button>
+            </div>
+            <div id="notifications-content" class="notifications-content">
+                <p class="text-muted">Cargando notificaciones...</p>
+            </div>
+        </div>
 
         <!-- Navigation -->
         <nav class="app-nav">
@@ -124,6 +139,11 @@
                     </div>
                 </div>
 
+                <!-- Notificaciones de Vencimientos -->
+                <div id="expiration-notifications-section" style="margin-top: 20px;">
+                    <!-- This will be populated dynamically -->
+                </div>
+
                 <!-- Historial de Cajas -->
                 <div class="card" style="margin-top: 20px;">
                     <h3>💰 Historial de Cajas (últimas 5 cerradas)</h3>
@@ -180,6 +200,53 @@
                         <p class="text-muted">No hay movimientos registrados</p>
                     </div>
                 </div>
+
+                <!-- Cash Box History -->
+                <div class="card" style="margin-top: 20px;">
+                    <h3>Historial de Cajas</h3>
+                    
+                    <!-- Filters -->
+                    <div style="margin-bottom: 20px;">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Año</label>
+                                <select id="cashbox-year-filter">
+                                    <!-- Will be populated dynamically -->
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Mes</label>
+                                <div class="month-filters" id="cashbox-month-filters">
+                                    <button class="month-btn active" data-month="">Todos</button>
+                                    <button class="month-btn" data-month="1">Enero</button>
+                                    <button class="month-btn" data-month="2">Febrero</button>
+                                    <button class="month-btn" data-month="3">Marzo</button>
+                                    <button class="month-btn" data-month="4">Abril</button>
+                                    <button class="month-btn" data-month="5">Mayo</button>
+                                    <button class="month-btn" data-month="6">Junio</button>
+                                    <button class="month-btn" data-month="7">Julio</button>
+                                    <button class="month-btn" data-month="8">Agosto</button>
+                                    <button class="month-btn" data-month="9">Septiembre</button>
+                                    <button class="month-btn" data-month="10">Octubre</button>
+                                    <button class="month-btn" data-month="11">Noviembre</button>
+                                    <button class="month-btn" data-month="12">Diciembre</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Cash Boxes Table -->
+                    <div id="cashbox-history-list">
+                        <p class="text-muted">Seleccione un año y mes para ver el historial de cajas</p>
+                    </div>
+
+                    <div id="cashbox-history-totals" style="margin-top: 20px; padding: 15px; background: #f0fdf4; border-left: 4px solid #10b981; border-radius: 4px; display: none;">
+                        <p style="margin: 5px 0;"><strong>Total de Cajas:</strong> <span id="cashbox-history-count">0</span></p>
+                        <p style="margin: 5px 0;"><strong>Cajas Cerradas:</strong> <span id="cashbox-history-closed">0</span></p>
+                        <p style="margin: 5px 0;"><strong>Cajas Abiertas:</strong> <span id="cashbox-history-open" style="color: #3b82f6; font-weight: 600;">0</span></p>
+                        <p style="margin: 5px 0;"><strong>Total Ventas:</strong> Q <span id="cashbox-history-sales">0.00</span></p>
+                    </div>
+                </div>
             </div>
 
             <!-- Sales Module -->
@@ -187,8 +254,14 @@
                 <div class="module-header">
                     <h2>Ventas</h2>
                     <div class="actions" id="sales-header-actions">
-                        <button class="btn btn-primary" onclick="showNewSaleForm()">Nueva Venta</button>
+                        <button id="new-sale-btn" class="btn btn-primary" onclick="showNewSaleForm()">Nueva Venta</button>
                     </div>
+                </div>
+
+                <!-- Cash Box Closed Warning -->
+                <div id="cash-box-closed-warning" class="alert warning" style="display: none;">
+                    <strong>⚠️ Caja Cerrada</strong><br>
+                    Debe abrir una caja antes de poder realizar ventas. Por favor, vaya al módulo de <strong>Caja</strong> y ábrala.
                 </div>
 
                 <!-- New Sale Form -->
@@ -233,7 +306,10 @@
                         <div style="position: relative;">
                             <div class="form-group">
                                 <label>Buscar por Código de Barras o Nombre</label>
-                                <input type="text" id="product-search" placeholder="Escanea código o escribe nombre del producto..." autocomplete="off">
+                                <div class="search-input-wrapper" id="product-search-wrapper">
+                                    <input type="text" id="product-search" placeholder="Escanea código o escribe nombre del producto..." autocomplete="off">
+                                    <button class="search-clear-btn" id="product-search-clear" onclick="clearProductSearch()" type="button">×</button>
+                                </div>
                             </div>
                             <div id="search-results" class="search-dropdown" style="display: none;"></div>
                         </div>
@@ -286,6 +362,69 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Current Cash Box Sales -->
+                <div id="current-cashbox-sales-section" style="display: none;">
+                    <div class="card">
+                        <h3>Ventas de la Caja Actual</h3>
+                        <p class="text-muted" style="margin-bottom: 15px;">Ventas realizadas desde la apertura de la caja</p>
+                        <div id="current-cashbox-sales-list">
+                            <p class="text-muted">No hay ventas registradas en esta caja</p>
+                        </div>
+                        <div id="current-cashbox-totals" style="margin-top: 20px; padding: 15px; background: #f0fdf4; border-left: 4px solid #10b981; border-radius: 4px; display: none;">
+                            <p style="margin: 5px 0;"><strong>Total de Ventas:</strong> <span id="cashbox-sales-count">0</span></p>
+                            <p style="margin: 5px 0; font-size: 1.2em;"><strong>Total Recaudado:</strong> Q <span id="cashbox-sales-total">0.00</span></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sales History -->
+                <div id="sales-history-section" style="display: none;">
+                    <div class="card">
+                        <h3>Historial de Ventas</h3>
+                        
+                        <!-- Filters -->
+                        <div style="margin-bottom: 20px;">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Año</label>
+                                    <select id="sales-year-filter">
+                                        <!-- Will be populated dynamically -->
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Mes</label>
+                                    <div class="month-filters" id="sales-month-filters">
+                                        <button class="month-btn active" data-month="">Todos</button>
+                                        <button class="month-btn" data-month="1">Enero</button>
+                                        <button class="month-btn" data-month="2">Febrero</button>
+                                        <button class="month-btn" data-month="3">Marzo</button>
+                                        <button class="month-btn" data-month="4">Abril</button>
+                                        <button class="month-btn" data-month="5">Mayo</button>
+                                        <button class="month-btn" data-month="6">Junio</button>
+                                        <button class="month-btn" data-month="7">Julio</button>
+                                        <button class="month-btn" data-month="8">Agosto</button>
+                                        <button class="month-btn" data-month="9">Septiembre</button>
+                                        <button class="month-btn" data-month="10">Octubre</button>
+                                        <button class="month-btn" data-month="11">Noviembre</button>
+                                        <button class="month-btn" data-month="12">Diciembre</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Sales Table -->
+                        <div id="sales-history-list">
+                            <p class="text-muted">Seleccione un año y mes para ver las ventas</p>
+                        </div>
+
+                        <div id="sales-history-totals" style="margin-top: 20px; padding: 15px; background: #eff6ff; border-left: 4px solid #3b82f6; border-radius: 4px; display: none;">
+                            <p style="margin: 5px 0;"><strong>Total de Ventas:</strong> <span id="history-sales-count">0</span></p>
+                            <p style="margin: 5px 0;"><strong>Ventas Anuladas:</strong> <span id="history-sales-annulled" style="color: #dc2626; font-weight: 600;">0</span></p>
+                            <p style="margin: 5px 0; font-size: 1.2em;"><strong>Total:</strong> Q <span id="history-sales-total">0.00</span></p>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Stock Module -->
@@ -302,15 +441,46 @@
                     <h3>Agregar Stock</h3>
                     <p class="text-muted">Ingresa nuevo inventario al sistema</p>
                     <form id="add-stock-form">
+                        <input type="hidden" name="product_id" id="stock-product-id">
+                        
                         <div class="form-row">
-                            <div class="form-group">
-                                <label>ID Producto *</label>
-                                <input type="number" name="product_id" id="stock-product-id" required min="1" placeholder="Identificador del producto">
+                            <div class="form-group flex-2">
+                                <label>Código de Barras del Producto *</label>
+                                <div class="search-input-wrapper" id="stock-barcode-wrapper">
+                                    <input type="text" id="stock-barcode" required placeholder="Escanea o escribe el código de barras..." autocomplete="off">
+                                    <button class="search-clear-btn" id="stock-barcode-clear" onclick="clearStockBarcode()" type="button">×</button>
+                                </div>
                             </div>
+                        </div>
+                        
+                        <!-- Product Info Preview -->
+                        <div id="stock-product-info" style="display: none; background: #f0fdf4; border: 2px solid #10b981; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+                            <h4 style="margin: 0 0 8px 0; color: #059669; font-size: 16px;">✓ Producto Encontrado</h4>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; font-size: 14px;">
+                                <div>
+                                    <strong style="color: #64748b;">Nombre:</strong><br>
+                                    <span id="stock-product-name" style="color: #1e293b;"></span>
+                                </div>
+                                <div>
+                                    <strong style="color: #64748b;">Código:</strong><br>
+                                    <span id="stock-product-barcode" style="color: #1e293b;"></span>
+                                </div>
+                                <div>
+                                    <strong style="color: #64748b;">Categoría:</strong><br>
+                                    <span id="stock-product-category" style="color: #1e293b;"></span>
+                                </div>
+                                <div>
+                                    <strong style="color: #64748b;">Stock Actual:</strong><br>
+                                    <span id="stock-product-stock" style="color: #1e293b; font-weight: 600;"></span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
                             <div class="form-group">
                                 <label>Presentación *</label>
                                 <select name="presentation_id" id="stock-presentation" required>
-                                    <option value="">Seleccione presentación</option>
+                                    <option value="">Primero busque el producto</option>
                                 </select>
                             </div>
                             <div class="form-group">
@@ -344,13 +514,16 @@
                     <h3>Consultar Stock</h3>
                     <p class="text-muted">Verifica disponibilidad y lotes de un producto</p>
                     
-                    <form id="check-stock-form" class="inline-form">
+                    <div class="inline-form">
+                        <input type="hidden" name="product_id" id="check-stock-product-id">
                         <div class="form-group">
-                            <label>ID Producto</label>
-                            <input type="number" name="product_id" required min="1" placeholder="Identificador del producto">
+                            <label>Código de Barras</label>
+                            <div class="search-input-wrapper" id="check-stock-barcode-wrapper">
+                                <input type="text" id="check-stock-barcode" placeholder="Escanea o escribe el código de barras" autocomplete="off">
+                                <button class="search-clear-btn" id="check-stock-barcode-clear" onclick="clearCheckStockBarcode()" type="button">×</button>
+                            </div>
                         </div>
-                        <button type="submit" class="btn btn-primary">Consultar</button>
-                    </form>
+                    </div>
                     
                     <div id="stock-result" style="margin-top: 20px;"></div>
                     <div id="stock-batches-list" style="margin-top: 20px;"></div>
@@ -477,7 +650,10 @@
                         <div class="catalog-filters">
                             <div class="filter-group">
                                 <label>Buscar:</label>
-                                <input type="text" id="catalog-search" placeholder="Nombre o código de barras..." autocomplete="off">
+                                <div class="search-input-wrapper" id="catalog-search-wrapper">
+                                    <input type="text" id="catalog-search" placeholder="Nombre o código de barras..." autocomplete="off">
+                                    <button class="search-clear-btn" id="catalog-search-clear" onclick="clearCatalogSearch()" type="button">×</button>
+                                </div>
                             </div>
                             <div class="filter-group">
                                 <label>Categoría:</label>
@@ -837,6 +1013,6 @@
     <!-- Toast Notifications -->
     <div id="toast-container"></div>
 
-    <script src="/js/pos.js?v=20260209001"></script>
+    <script src="/js/pos.js?v=20260215023"></script>
 </body>
 </html>

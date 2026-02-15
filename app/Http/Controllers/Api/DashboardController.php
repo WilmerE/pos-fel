@@ -87,17 +87,21 @@ class DashboardController extends Controller
                 ->limit(5)
                 ->get()
                 ->map(function ($box) {
-                    // Calcular ventas de esta caja
+                    // Calcular ventas de esta caja (solo para mostrar)
                     $sales = Sale::whereBetween('created_at', [$box->opened_at, $box->closed_at])
                         ->where('status', 'completed')
                         ->sum('total');
+                    
+                    // Usar el método del modelo para calcular correctamente la diferencia
+                    // (que incluye ventas, ingresos, gastos y reversals)
+                    $difference = $box->calculateDifference();
                     
                     return [
                         'id' => $box->id,
                         'opening_amount' => $box->opening_amount,
                         'closing_amount' => $box->closing_amount,
                         'total_sales' => $sales,
-                        'difference' => $box->closing_amount - $box->opening_amount,
+                        'difference' => $difference,
                         'opened_at' => $box->opened_at,
                         'closed_at' => $box->closed_at,
                         'opened_by' => $box->openedBy->name ?? 'N/A',

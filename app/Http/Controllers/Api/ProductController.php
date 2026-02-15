@@ -31,7 +31,7 @@ class ProductController extends Controller
         }
 
         // Search by barcode (exact match) or name (partial match)
-        $products = Product::with(['presentations'])
+        $products = Product::with(['presentations', 'stockBatches'])
             ->where('active', true)
             ->where(function ($query) use ($search) {
                 $query->where('barcode', $search)
@@ -43,11 +43,41 @@ class ProductController extends Controller
         return response()->json([
             'message' => $products->isEmpty() ? 'No se encontraron productos.' : 'Productos encontrados.',
             'data' => $products->map(function ($product) {
+                // Calculate total stock
+                $totalStock = $product->stockBatches->sum('quantity_available');
+                
+                // Check for expired batches
+                $expiredBatches = $product->stockBatches
+                    ->filter(function ($batch) {
+                        return $batch->expiration_date && 
+                               $batch->expiration_date < now() && 
+                               $batch->quantity_available > 0;
+                    })
+                    ->count();
+                
+                // Check for expiring soon (within 7 days)
+                $expiringSoonBatches = $product->stockBatches
+                    ->filter(function ($batch) {
+                        return $batch->expiration_date && 
+                               $batch->expiration_date >= now() && 
+                               $batch->expiration_date <= now()->addDays(7) && 
+                               $batch->quantity_available > 0;
+                    })
+                    ->count();
+                
                 return [
                     'id' => $product->id,
                     'name' => $product->name,
                     'description' => $product->description,
                     'barcode' => $product->barcode,
+                    'brand' => $product->brand,
+                    'location' => $product->location,
+                    'category_id' => $product->category_id,
+                    'supplier_id' => $product->supplier_id,
+                    'total_stock' => $totalStock,
+                    'has_expired_batches' => $expiredBatches > 0,
+                    'has_expiring_soon_batches' => $expiringSoonBatches > 0,
+                    'stock_warning' => $totalStock <= 20,
                     'presentations' => $product->presentations->map(function ($presentation) {
                         return [
                             'id' => $presentation->id,
@@ -133,7 +163,9 @@ class ProductController extends Controller
                 $locations = $product->stockBatches->pluck('location')->filter()->unique()->values();
                 
                 // Get base price from first presentation
-                $basePrice = $product->presentations->first()->sale_price ?? 0;
+                $firstPresentation = $product->presentations->first();
+                $basePrice = $firstPresentation->sale_price ?? 0;
+                $basePresentationName = $firstPresentation->name ?? 'Unidad';
                 $priceWithIva = $basePrice * 1.12;
 
                 return [
@@ -146,6 +178,7 @@ class ProductController extends Controller
                     'brand' => $product->brand,
                     'location' => $product->location,
                     'base_price' => round($basePrice, 2),
+                    'base_presentation_name' => $basePresentationName,
                     'price_with_iva' => round($priceWithIva, 2),
                     'total_stock' => $totalStock,
                     'locations' => $locations,
@@ -406,6 +439,70 @@ class ProductController extends Controller
 
         return response()->json([
             'message' => 'Presentación eliminada exitosamente.',
+        ]);
+    }
+
+    /**
+     * Get expiration notifications
+     * Returns products that are expired or expiring soon (within 30 days)
+     * Permission: view_stock
+     */
+    public function expirationNotifications(Request $request): JsonResponse
+    {
+        if (!$request->user()->hasPermission('view_stock')) {
+            return response()->json([
+                'message' => 'No tienes permiso para ver notificaciones.',
+            ], 403);
+        }
+
+        $today = now();
+        $oneMonthFromNow = now()->addDays(30);
+
+        // Get stock batches that are expired or expiring soon
+        $batches = \App\Models\StockBatch::with(['product'])
+            ->whereNotNull('expiration_date')
+            ->where('quantity_available', '>', 0)
+            ->where(function ($query) use ($today, $oneMonthFromNow) {
+                $query->where('expiration_date', '<', $today) // Already expired
+                      ->orWhereBetween('expiration_date', [$today, $oneMonthFromNow]); // Expiring soon
+            })
+            ->orderBy('expiration_date', 'asc')
+            ->get();
+
+        $notifications = $batches->map(function ($batch) use ($today) {
+            $expirationDate = \Carbon\Carbon::parse($batch->expiration_date);
+            $daysUntilExpiration = (int) $today->diffInDays($expirationDate, false);
+            
+            $isExpired = $daysUntilExpiration < 0;
+            $urgency = $isExpired ? 'expired' : ($daysUntilExpiration <= 7 ? 'critical' : 'warning');
+
+            return [
+                'id' => $batch->id,
+                'product_id' => $batch->product_id,
+                'product_name' => $batch->product->name,
+                'product_barcode' => $batch->product->barcode,
+                'batch_number' => $batch->batch_number,
+                'location' => $batch->location,
+                'quantity_available' => $batch->quantity_available,
+                'expiration_date' => $expirationDate->format('Y-m-d'),
+                'expiration_date_formatted' => $expirationDate->format('d/m/Y'),
+                'days_until_expiration' => $daysUntilExpiration,
+                'is_expired' => $isExpired,
+                'urgency' => $urgency,
+                'message' => $isExpired 
+                    ? "Venció hace " . abs($daysUntilExpiration) . " días"
+                    : "Vence en " . $daysUntilExpiration . " días",
+            ];
+        });
+
+        return response()->json([
+            'message' => 'Notificaciones obtenidas exitosamente.',
+            'data' => $notifications,
+            'summary' => [
+                'total' => $notifications->count(),
+                'expired' => $notifications->where('is_expired', true)->count(),
+                'expiring_soon' => $notifications->where('is_expired', false)->count(),
+            ],
         ]);
     }
 }
