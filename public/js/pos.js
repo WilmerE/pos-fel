@@ -2809,6 +2809,13 @@ if (document.getElementById('catalog-search')) {
     });
 }
 
+// Initialize category filter with instant search
+if (document.getElementById('catalog-category-filter')) {
+    document.getElementById('catalog-category-filter').addEventListener('change', (e) => {
+        loadProductCatalog(1);
+    });
+}
+
 // ==================== INVENTORY IMPORT ====================
 
 let currentImportId = null;

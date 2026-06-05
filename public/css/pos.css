@@ -105,6 +105,14 @@ body {
     height: 64px;
 }
 
+.header-logo {
+    display: block;
+    max-height: 44px;
+    width: auto;
+    max-width: 220px;
+    object-fit: contain;
+}
+
 .app-header h1 {
     font-size: 24px;
     color: #667eea;
